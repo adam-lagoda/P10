@@ -5,6 +5,39 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
+class WaveGenerator():
+    def __init__(
+            self,
+            frequency_1=1,
+            frequency_2=1,
+            num_points=100,
+            time_duration=1,
+            frames_per_second=24,
+            timestep_delay=0.1):
+        # Parameters
+        self.frequency_1 = frequency_1  # frequency of 1st sine wave
+        self.frequency_2 = frequency_2  # frequency of 2nd sine wave
+        self.num_points = num_points  # number of points in each direction
+        self.time_duration = time_duration  # duration of the animation in seconds
+        self.frames_per_second = frames_per_second  # frames per second in the animation
+        self.timestep_delay = timestep_delay  # delay in seconds for the second wave
+
+        # Grid of points
+        self.x = np.linspace(-np.pi, np.pi, self.num_points)
+        self.y = np.linspace(-np.pi, np.pi, self.num_points)
+        self.X, self.Y = np.meshgrid(self.x, self.y)
+
+        self.wave = self.wave1(self.X,0) + self.wave2(self.Y, 0, self.timestep_delay)
+
+    def wave1(self, X, time):
+        return 1/2 * np.sin(self.frequency_1 * (X + time * 2 * np.pi))
+
+    def wave2(self, Y, time, delay):
+        return 1/2 * np.sin(self.frequency_2 * (Y + (time - delay) * 2 * np.pi))
+
+    def update(self, dt):
+        self.wave = self.wave1(self.X, dt) + self.wave2(self.Y, dt, self.timestep_delay)
+        return self.wave  # 2D array containing wave height data
 
 class BuoyantBoat(gym.Env):
     def __init__(self, kp=0.0, ki=0.0, kd=0.0, control_technique="DQN"):
@@ -22,7 +55,6 @@ class BuoyantBoat(gym.Env):
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2, ))
         self.state = np.zeros(2)  # y axis of the boat, y axis of the load
 
-        self.wave_generator = np.sin(np.linspace(-np.pi, np.pi, 200)) * 2
         self.wave_state = 0
         self.step_count = 0
         self.net_force_boat = 0
