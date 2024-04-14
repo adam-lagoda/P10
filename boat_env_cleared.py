@@ -8,10 +8,10 @@ from gymnasium import spaces
 class WaveGenerator():
     def __init__(
             self,
-            frequency_1=1,
-            frequency_2=1,
+            frequency_1=0.25,
+            frequency_2=0.25,
             num_points=100,
-            time_duration=1,
+            time_duration=10,
             frames_per_second=24,
             timestep_delay=0.1):
         # Parameters
@@ -23,21 +23,80 @@ class WaveGenerator():
         self.timestep_delay = timestep_delay  # delay in seconds for the second wave
 
         # Grid of points
-        self.x = np.linspace(-np.pi, np.pi, self.num_points)
-        self.y = np.linspace(-np.pi, np.pi, self.num_points)
+        self.x = np.linspace(-10, 10, self.num_points)
+        self.y = np.linspace(-10, 10, self.num_points)
         self.X, self.Y = np.meshgrid(self.x, self.y)
 
-        self.wave = self.wave1(self.X,0) + self.wave2(self.Y, 0, self.timestep_delay)
+        self._wave_plane = self.wave1(self.X,0) + self.wave2(self.Y, 0, self.timestep_delay)
+        self.wave = None
+
+
+    def _bilin_intp(self, x, y, arr=None):
+        """Calculate a value based on non-int array index using bilinear interpolation."""
+        if arr is None:
+            arr = self._wave_plane
+        # Get the integer parts of the indices
+        x_floor = int(np.floor(x))
+        x_ceil = int(np.ceil(x))
+        y_floor = int(np.floor(y))
+        y_ceil = int(np.ceil(y))
+
+        # Ensure indices are within the array bounds
+        x_floor = max(x_floor, 0)
+        x_ceil = min(x_ceil, arr.shape[0] - 1)
+        y_floor = max(y_floor, 0)
+        y_ceil = min(y_ceil, arr.shape[1] - 1)
+
+        # If the indices are already integers, no interpolation is needed
+        if x_floor == x_ceil and y_floor == y_ceil:
+            return arr[x_floor, y_floor]
+
+        # Get the four surrounding points
+        top_left = arr[x_floor, y_floor]
+        top_right = arr[x_floor, y_ceil]
+        bottom_left = arr[x_ceil, y_floor]
+        bottom_right = arr[x_ceil, y_ceil]
+
+        # Calculate the interpolation weights
+        x_weight = x - x_floor
+        y_weight = y - y_floor
+
+        # Perform bilinear interpolation
+        top_interpolated = (top_right * x_weight) + (top_left * (1 - x_weight))
+        bottom_interpolated = (bottom_right * x_weight) + (bottom_left * (1 - x_weight))
+        interpolated_value = (bottom_interpolated * y_weight) + (top_interpolated * (1 - y_weight))
+
+        return interpolated_value
 
     def wave1(self, X, time):
-        return 1/2 * np.sin(self.frequency_1 * (X + time * 2 * np.pi))
+        return np.sin(self.frequency_1 * (X + time * 2 * np.pi))
 
     def wave2(self, Y, time, delay):
-        return 1/2 * np.sin(self.frequency_2 * (Y + (time - delay) * 2 * np.pi))
+        return np.sin(self.frequency_2 * (Y + (time - delay) * 2 * np.pi))
 
     def update(self, dt):
-        self.wave = self.wave1(self.X, dt) + self.wave2(self.Y, dt, self.timestep_delay)
-        return self.wave  # 2D array containing wave height data
+        self._wave_plane = self.wave1(self.X, dt) + self.wave2(self.Y, dt, self.timestep_delay)
+        # return self.wave  # 2D array containing wave height data
+        _mc = (50, 50)
+        idx_wh11 = [_mc[0]-5, _mc[1]+12.5]
+        idx_wh12 = [_mc[0]+5, _mc[1]+12.5]
+        idx_wh21 = [_mc[0]-5, _mc[1]-12.5]
+        idx_wh22 = [_mc[0]+5, _mc[1]-12.5]
+
+        self.wave = np.array(
+            [
+                [
+                    self._bilin_intp(idx_wh11[0], idx_wh11[1]), self._bilin_intp(idx_wh12[0], idx_wh12[1])
+                ],
+                [
+                    self._bilin_intp(idx_wh21[0], idx_wh21[1]), self._bilin_intp(idx_wh22[0], idx_wh22[1])
+                ]
+            ]
+        )
+        #              |self.wave[-x,y]    self.wave[x,y] |
+        #  self.wave = |                                  |
+        #              |self.wave[-x,-y]   self.wave[x,-y]|
+        return self.wave
 
 class BuoyantBoat(gym.Env):
     def __init__(self, kp=0.0, ki=0.0, kd=0.0, control_technique="DQN"):
@@ -54,8 +113,10 @@ class BuoyantBoat(gym.Env):
         self.action_space = spaces.Discrete(11)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2, ))
         self.state = np.zeros(2)  # y axis of the boat, y axis of the load
+        self.action = None
 
-        self.wave_state = 0
+        self.wave_generator = WaveGenerator()
+        self.wave_state = self.wave_generator.update(0)
         self.step_count = 0
         self.net_force_boat = 0
         self.boat_y_ddot = 0
@@ -85,17 +146,19 @@ class BuoyantBoat(gym.Env):
         self.rope_load_cache = []
 
     def reset(self, **kwargs):
-        self.state = np.array([0.0, 0.0])
+        self.state = np.array([np.array([[0.0, 0.0], [0.0, 0.0]]), 0.0])  # boat state, load state
         self.prev_state = np.array([0.0, 0.0])
         self.rope_load = self.initial_rope_load  # reset load side rope length to intial value
-        self.wave_state = self.wave_generator[0]
         self.get_submersion()
         self.step_count = 0
+        self.wave_state = self.wave_generator.update(self.step_count)
         self.integral = 0.0  # reset integral term for PID
         print("Reset")
         return self.state
 
     def get_buyoancy(self, dy):
+        # return self.density_water * self.crosssec_area * (self.steady_sub_h + dy) * self.gravity  # [N]
+        
         return self.density_water * self.crosssec_area * (self.steady_sub_h + dy) * self.gravity  # [N]
 
     def get_submersion(self):
@@ -167,44 +230,17 @@ class BuoyantBoat(gym.Env):
         print(reward)
         return reward
 
-    # def reward_function(self):
-    #     # Define your target position for the load
-    #     target_position = self.initial_rope_load  # Replace this with the actual target position value
-
-    #     # Calculate position error (how far the load is from the target position)
-    #     position_error = self.rope_load - target_position
-    #     position_error_penalty = -(position_error**2)
-
-    #     # Calculate velocity of the load (change in position)
-    #     load_velocity = self.state[0] - self.prev_state[0]  # Assuming self.state[0] represents load's position
-    #     velocity_penalty = -(load_velocity**2)
-
-    #     # Assign weights to the different components of the reward function
-    #     # depending on which behavior you want to prioritize
-    #     w_position = 1.0  # Weight for position error penalty
-    #     w_velocity = 1.0  # Weight for velocity penalty
-
-    #     reward = (w_position * position_error_penalty) + (w_velocity * velocity_penalty)
-
-    #     # You might want to add an additional penalty for dropping the load into the water
-    #     if self.rope_load < 0:
-    #         reward -= 100  # Large negative penalty for dropping the load
-
-    #     # Ensure the computation doesn't result in a positive reward
-    #     reward = min(reward, 0.0)
-    #     print(reward)
-    #     return reward
-
     def step(self, action):
-        self.wave_state = self.wave_generator[int(self.step_count) % len(self.wave_generator)]
+        self.wave_state = self.wave_generator.update(self.step_count)
+
         self.action = action
 
-        dy = self.wave_state - self.state[0]
+        dy = self.wave_state - self.state[0]  # TODO: all of the concurrent operations need to be done element-wise
         self.prev_state[0] = self.boat_y
         _current_buyoancy_force = self.get_buyoancy(dy)
         self.net_force_boat = _current_buyoancy_force - self.mass_boat * self.gravity
 
-        self.boat_y_ddot = self.net_force_boat / self.mass_boat
+        self.boat_y_ddot = self.net_force_boat / self.mass_boat  # TODO: rotation matrix needs to be implemented based on force applied
         self.boat_y_dot = self.boat_y_ddot * self.dt  # *dt
         self.boat_y = self.boat_y_dot * self.dt  # *dt
 
@@ -249,7 +285,4 @@ class BuoyantBoat(gym.Env):
                 csvwriter.writerow([data_point])
 
 ## TODO list:
-# 1. real wave data
-#   1. ask if peter and daniel has wave data
-
 # we optimize for disturbance, not time
