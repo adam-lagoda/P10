@@ -11,27 +11,29 @@ class DynamicSquare:
 
         # state variables
         self.position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
-        self.orientation = np.array([0, 0, 0], dtype=np.float64)  # [roll, pitch, yaw] [rad]
         self.velocity = np.array([0, 0, 0], dtype=np.float64)  # [vx, vy, vz] [m/s]
+        self.orientation = np.array([0, 0, 0], dtype=np.float64)  # [roll, pitch, yaw] [rad]
         self.angular_velocity = np.array([0, 0, 0], dtype=np.float64)  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
 
         # force variables at the corners
         self.forces = np.zeros((4, 3))  # 4 corners with [fx, fy, fz] [N]
-
-    def apply_force(self, corner_index, force):
-        self.forces[corner_index] = force
-
-    def calculate_torques(self):
+        self._torques = np.zeros((4, 3))
+        self.total_torque = np.zeros(3)
         # top view, forward is up
-        corner_positions = np.array([
+        self._force_applied_coords = np.array([
             [self.width/4, self.length/4, self.height/2],  # bottom left
             [3*self.width/4, self.length/4, self.height/2],  # bottom right
             [3*self.width/4, 3*self.length/4, self.height/2],  # top right
             [self.width/4, 3*self.length/4, self.height/2],  # top left
         ], dtype=np.float64)
 
-        torques = np.cross(corner_positions - self.position, self.forces)
-        return np.sum(torques, axis=0)
+    def apply_external_force(self, corner_index, force):
+        self.forces[corner_index] = force
+
+    def calculate_torques(self):
+        self._torques = np.cross(self._force_applied_coords - self.position, self.forces)
+        self.total_torque = np.sum(self._torques, axis=0)
+        return self.total_torque
     
     def simulate_step(self):
         # Calculate net forces
@@ -63,7 +65,7 @@ if __name__ == "__main__":
     square = DynamicSquare(mass=500.0, dimensions=(4.0, 10.0, 2.0), timestep=0.01)
     # Apply a force of 10N upwards at the top right corner for 100 steps
     for _ in range(100):
-        square.apply_force(corner_index=2, force=np.array([0, 0, 10]))
+        square.apply_external_force(corner_index=2, force=np.array([0, 0, 10]))
         square.simulate_step()
 
     # After applying forces, you can access the position and orientation
