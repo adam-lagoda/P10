@@ -4,22 +4,22 @@ import csv
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
+import matplotlib.pyplot as plt
+import copy
 
 class WaveGenerator():
     def __init__(
             self,
             coords,  # wrt to center of mass !!!
-            frequency_1=0.25,
-            frequency_2=0.25,
+            frequency_1=0.01,
+            frequency_2=0.01,
             num_points=101,
-            time_duration=10,
             frames_per_second=24,
             timestep_delay=0.1):
         # Parameters
         self.frequency_1 = frequency_1  # frequency of 1st sine wave
         self.frequency_2 = frequency_2  # frequency of 2nd sine wave
         self.num_points = num_points  # number of points in each direction
-        self.time_duration = time_duration  # duration of the animation in seconds
         self.frames_per_second = frames_per_second  # frames per second in the animation
         self.timestep_delay = timestep_delay  # delay in seconds for the second wave
         self.coords = coords
@@ -113,25 +113,52 @@ class BuoyantBoat(gym.Env):
         # self.steady_sub_h = 1  # [m]
         self.density_water = 1000  # [kg/m^3]
         self.mass_boat = 500  # [kg]
+        # self.mass_boat = 60000  # [kg]
         # self.density_wood = 600  # [kg/m^3]
         self._dimensions = (4.0, 10.0, 2.0)
+        self.relative_coordinates = np.array([0, 3, 2])
         self.width = self._dimensions[0]
         self.length = self._dimensions[1]
         self.height = self._dimensions[2]
         self.Ixx = (self.mass_boat / 12) * (self.height**2 + self.width**2)  # Moment of inertia about x-axis (kg m^2)
         self.Iyy = (self.mass_boat / 12) * (self.length**2 + self.width**2)  # Moment of inertia about y-axis (kg m^2)
         self.Izz = (self.mass_boat / 12) * (self.length**2 + self.height**2)  # Moment of inertia about z-axis (kg m^2)
-
+        
+        # DQN spaces
         self.action_space = spaces.Discrete(11)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2, ))
-        self.state = np.zeros(2)  # y axis of the boat, y axis of the load
+        self.state = [
+            np.array([0, 0, -1], dtype=np.float64),  # boat position
+            np.array([0, 0, 0], dtype=np.float64),  # boat velocity
+            np.array([0, 0, 0], dtype=np.float64),  # boat orientation
+            np.array([0, 0, 0], dtype=np.float64),  # boat angular velocity
+            np.array([0], dtype=np.float64),  # load position
+        ]
+        self.prev_state = [
+            np.array([0, 0, -1], dtype=np.float64),  # boat position
+            np.array([0, 0, 0], dtype=np.float64),  # boat velocity
+            np.array([0, 0, 0], dtype=np.float64),  # boat orientation
+            np.array([0, 0, 0], dtype=np.float64),  # boat angular velocity
+            np.array([0], dtype=np.float64),  # load position
+        ]
         self.action = None
 
         # state variables
         self.position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
+        self.prev_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
         self.velocity = np.array([0, 0, 0], dtype=np.float64)  # [vx, vy, vz] [m/s]
+        self.prev_velocity = np.array([0, 0, 0], dtype=np.float64)  # [vx, vy, vz] [m/s]
+        self.acceleration = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
+        self.prev_accelerationn = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
         self.orientation = np.array([0, 0, 0], dtype=np.float64)  # [roll, pitch, yaw] [rad]
+        self.prev_orientation = np.array([0, 0, 0], dtype=np.float64)  # [roll, pitch, yaw] [rad]
         self.angular_velocity = np.array([0, 0, 0], dtype=np.float64)  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
+        self.prev_angular_velocity = np.array([0, 0, 0], dtype=np.float64)  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
+        self.angular_acceleration = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
+        self.prev_angular_accelerationn = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
+        self.winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
+        self.prev_winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
+        self.combined_rotation_matrix = np.zeros(3)
         
         self.forces = np.zeros((4, 3))  # 4 corners with [fx, fy, fz] [N]
         self.buoyant_forces = np.zeros((2, 2))
@@ -190,19 +217,25 @@ class BuoyantBoat(gym.Env):
         self.step_count = 0
         self.wave_state = self.wave_generator.update(self.step_count)
         self.state = [
-            np.array([0, 0, 0], dtype=np.float64),  # boat position
+            np.array([0, 0, -1], dtype=np.float64),  # boat position
             np.array([0, 0, 0], dtype=np.float64),  # boat velocity
             np.array([0, 0, 0], dtype=np.float64),  # boat orientation
             np.array([0, 0, 0], dtype=np.float64),  # boat angular velocity
             np.array([0], dtype=np.float64),  # load position
         ]
         self.prev_state = [
-            np.array([0, 0, 0], dtype=np.float64),  # boat position
+            np.array([0, 0, -1], dtype=np.float64),  # boat position
             np.array([0, 0, 0], dtype=np.float64),  # boat velocity
             np.array([0, 0, 0], dtype=np.float64),  # boat orientation
             np.array([0, 0, 0], dtype=np.float64),  # boat angular velocity
             np.array([0], dtype=np.float64),  # load position
         ]
+        self.prev_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
+        self.prev_velocity = np.array([0, 0, 0], dtype=np.float64)  # [vx, vy, vz] [m/s]
+        self.prev_orientation = np.array([0, 0, 0], dtype=np.float64)  # [roll, pitch, yaw] [rad]
+        self.prev_angular_velocity = np.array([0, 0, 0], dtype=np.float64)  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
+        self.prev_winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
+        
         self.rope_load = self.initial_rope_load  # reset load side rope length to intial value
         self.integral = 0.0  # reset integral term for PID
         print("Reset")
@@ -225,29 +258,36 @@ class BuoyantBoat(gym.Env):
 
     def get_buoyancy(self):
         # Calculate the combined rotation matrix
-        combined_rotation_matrix = self.rotation_z(self.orientation[2]) @ self.rotation_y(self.orientation[1]) @ self.rotation_x(self.orientation[0])
+        self.combined_rotation_matrix = self.rotation_z(self.orientation[2]) @ self.rotation_y(self.orientation[1]) @ self.rotation_x(self.orientation[0])
         # Apply the rotation to the local coordinate system of the force application points
         # Then add the object's position to translate the points to the global coordinate system
-        force_applied_points_global = np.dot(self._force_applied_coords, combined_rotation_matrix.T) + self.position
+        force_applied_points_global = np.dot(self._force_applied_coords, self.combined_rotation_matrix.T) + self.position
         print(force_applied_points_global)
         force_applied_y = force_applied_points_global[:, :, 2:]
         self.buoyant_forces = np.zeros((2, 2))
+        # Get max force so it doesn't go berserk on us later
+        _max_force = 1/75 * self.density_water * self.gravity * self.width * self.length / 4 * self.height
         # Calculate the buoyant forces acting on corner positions
         for i in range(2):
             for j in range(2):
                 _local_buoyant_force = self.density_water * self.gravity * self.width * self.length / 4 * (self.wave_state[i][j] - force_applied_y[i][j][0] - self._force_applied_coords[i][j][2])
-                self.buoyant_forces[i][j] = np.maximum(_local_buoyant_force, 0)
+                print(f"Distance to water = {(self.wave_state[i][j] - force_applied_y[i][j][0] - self._force_applied_coords[i][j][2])}")
+                if _local_buoyant_force > 0:
+                    print("we are underwater")
+                # cap forces between 0 and max, obviously
+                self.buoyant_forces[i][j] = np.maximum(np.minimum(_local_buoyant_force, _max_force), 0)
         print(self.buoyant_forces)
 
         return self.buoyant_forces
 
     def apply_external_force(self, force):
         self.forces = force
-        return np.sum(self.forces, axis=0)
+        return np.sum(self.forces, axis=(0, 1))
 
     def calculate_torques(self):
-        torques = np.cross(self._force_applied_coords - self.position, self.forces)
-        return np.sum(torques, axis=0)
+        # torques = np.cross(self._force_applied_coords - self.position, self.forces)
+        torques = np.cross(self._force_applied_coords, self.forces)
+        return np.sum(torques, axis=(0, 1))
 
     def winch_control(self, action=0):
         if self.control_technique == "PID":  # check if PID is enabled
@@ -295,14 +335,14 @@ class BuoyantBoat(gym.Env):
             self.winch_velocity = 5
         return self.winch_velocity
 
-    def rope_length(self):
+    def DH_load(self):
         _prev_length = math.sqrt(
-            math.pow(self.wtb_dist, 2) + math.pow(self.wtb_height - self.prev_state[0], 2)
+            math.pow(self.wtb_dist + self.prev_winch_position[1], 2) + math.pow(self.wtb_height - self.prev_winch_position[2], 2)
         )  # 15m from wtb, 50m height of wtb
-        _curr_length = math.sqrt(math.pow(self.wtb_dist, 2) + math.pow(self.wtb_height - self.state[0], 2))
+        _curr_length = math.sqrt(math.pow(self.wtb_dist - self.winch_position[1], 2) + math.pow(self.wtb_height - self.winch_position[2], 2))  # TODO: boat is not always facing forward, take that into account when calculating the distance
         self.rope_dy = _prev_length - _curr_length  # 15m from wtb, 50m height of wtb
         self.rope_boat -= self.rope_dy  # rope change on boat side
-        self.winch_velocity = self.winch_control(self.action)
+        self.winch_velocity = self.winch_control(self.action)  # TODO: winch model here
         self.rope_load += self.rope_dy + self.winch_velocity #* self.dt  # rope change on load side
         return self.rope_boat, self.rope_load, self.winch_velocity
 
@@ -311,7 +351,7 @@ class BuoyantBoat(gym.Env):
         scaling_factor = max(0, 1 - abs(rope_diff))  # Linear scaling
         reward = scaling_factor * 2 - 1  # Scale between -1 and 1 reward
         # reward = -abs(rope_diff)
-        print(reward)
+        # print(reward)
         return reward
 
     def step(self, action):
@@ -319,50 +359,53 @@ class BuoyantBoat(gym.Env):
 
         self.action = action
 
-        # dy = self.wave_state - self.state[0]  # TODO: all of the concurrent operations need to be done element-wise
-        # self.prev_state[0] = self.boat_y
         _current_buyoancy_forces = self.get_buoyancy()
         _total_external_forces = self.apply_external_force(_current_buyoancy_forces)
         total_torque = self.calculate_torques()
 
         # Linear motion equations
-        acceleration = (np.sum(_total_external_forces) - self.mass_boat * self.gravity) / self.mass_boat
-        self.velocity[1] += acceleration * self.dt # TODO: mke sure to add correct indexes, ie XYZ, Y IS UP
+        sum_ext_forces = np.sum(_total_external_forces)
+        # if sum_ext_forces > 1.5*self.mass_boat * self.gravity:
+        #     sum_ext_forces = 1.5* self.mass_boat * self.gravity
+        self.acceleration = (sum_ext_forces - self.mass_boat * self.gravity) / self.mass_boat
+        self.velocity[2] += self.acceleration * self.dt
         self.position += self.velocity * self.dt
         
         # Angular motion equations for roll and pitch
-        angular_acceleration = total_torque / self.I  # TODO: use Ixx, Iyy and Izz instead
-        self.angular_velocity += angular_acceleration * self.dt
+        self.angular_acceleration = total_torque / np.array([self.Ixx, self.Iyy, self.Izz])
+        self.angular_velocity += self.angular_acceleration * self.dt
         self.orientation += self.angular_velocity * self.dt
+        # Clip the values in the array to the limits np.minimum(a_max, np.maximum(a, a_min))
+        self.orientation = np.clip(self.orientation , -np.pi / 4, np.pi / 4)
 
+        # TODO: DH model base coords based on rotation from self.orientation
+        
+        self.winch_position =  np.dot(self.relative_coordinates, self.combined_rotation_matrix.T) + self.position
 
-        self.net_force_boat = _current_buyoancy_forces - self.mass_boat * self.gravity
-
-        self.boat_y_ddot = self.net_force_boat / self.mass_boat  # TODO: rotation matrix needs to be implemented based on force applied
-        self.boat_y_dot = self.boat_y_ddot * self.dt  # *dt
-        self.boat_y = self.boat_y_dot * self.dt  # *dt
-
-        self.state[0] = self.boat_y
-
-        _, self.rope_load, self.winch_velocity = self.rope_length()
+        _, self.rope_load, self.winch_velocity = self.DH_load()
         self.rope_load_cache.append(self.rope_load)
 
-        self.state[1] = self.rope_load
+        # self.state[1] = self.rope_load
+        self.state = [
+            self.position,  # boat position
+            self.velocity,  # boat velocity
+            self.orientation,  # boat orientation
+            self.angular_velocity,  # boat angular velocity
+            self.rope_load,  # load position
+        ]
 
         reward = self.reward_function()
         self.step_count = self.step_count + 1
         if self.step_count > 400:
             done = True
-            self.write_to_csv(self.csv_path + "/rope_load.csv", self.rope_load_cache)
-        # elif self.rope_load < 0:
-        #     done = True
+            # self.write_to_csv(self.csv_path + "/rope_load.csv", self.rope_load_cache)
         else:
             done = False
         info = {}
-        self.obs = np.array([self.state[0], self.state[1]])
+        self.obs = np.array([self.position[2], self.rope_load])
 
         if self.control_technique == "DQN":
-            return self.obs, reward, done, False, info
+            return self.state, _current_buyoancy_forces, done, False, info  # TODO: self.state should be self.obs
         else:
             return (
                 self.boat_y_ddot,
@@ -384,5 +427,63 @@ class BuoyantBoat(gym.Env):
 
 if __name__ == "__main__":
     env = BuoyantBoat()
-    env.reset()
-    env.step(0)
+    # env.reset()
+    # env.step(0)
+    _ = env.reset()
+
+    state_positions = []
+    state_orientations = []
+    state_angular_velocities = []
+    state_load_positions = []
+    _current_buyoancy_forces = []
+
+    for i in range(4000):
+        # Take a step in the environment
+        state, _current_buyoancy_force, _, _, _ = env.step(5)  # Assuming action 5 is used for all steps
+        
+        # Temporary variable to hold current state values
+        state_positions.append(copy.deepcopy(state[0]))
+        state_orientations.append(copy.deepcopy(state[2]))
+        state_angular_velocities.append(copy.deepcopy(state[3]))
+        state_load_positions.append(copy.deepcopy(state[4]))
+        _current_buyoancy_forces.append(copy.deepcopy(_current_buyoancy_force))
+
+    # Convert lists to numpy arrays for plotting
+    np_positions = np.array(state_positions)
+    np_orientations = np.array(state_orientations)
+    np_angular_velocities = np.array(state_angular_velocities)
+    np_load_position = np.array(state_load_positions)
+    np_current_buyoancy_forces = np.array(_current_buyoancy_forces)
+
+    # Plot states over time
+    plt.figure(figsize=(12, 8))
+    plt.subplot(3, 1, 1)
+    # plt.plot(positions[:, 0], label='Position X')
+    # plt.plot(positions[:, 1], label='Position Y')
+    plt.plot(np_positions[:, 2], label='Position Z')
+    plt.title('Position over time')
+    plt.legend()
+
+    plt.subplot(3, 1, 2)
+    plt.plot(np_orientations[:, 0], label='Orientation Roll')
+    plt.plot(np_orientations[:, 1], label='Orientation Pitch')
+    # plt.plot(orientations[:, 2], label='Orientation Yaw')
+    plt.title('Orientation over time')
+    plt.legend()
+
+    # plt.subplot(3, 1, 3)
+    # plt.plot(np_angular_velocities[:, 0], label='Angular Velocity Roll')
+    # plt.plot(np_angular_velocities[:, 1], label='Angular Velocity Pitch')
+    # plt.plot(np_angular_velocities[:, 2], label='Angular Velocity Yaw')
+    # plt.title('Angular Velocity over time')
+    # plt.legend()
+    plt.subplot(3, 1, 3)
+    plt.plot(np_current_buyoancy_forces[:, 0, 0], label='buoyant force #1')
+    plt.plot(np_current_buyoancy_forces[:, 1, 0], label='buoyant force #2')
+    plt.plot(np_current_buyoancy_forces[:, 0, 1], label='buoyant force #3')
+    plt.plot(np_current_buyoancy_forces[:, 1, 1], label='buoyant force #4')
+    plt.title('buoyant forces')
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()

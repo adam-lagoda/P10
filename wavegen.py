@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
 # Parameters
-frequency_1 = 0.25  # frequency of 1st sine wave
-frequency_2 = 0.25  # frequency of 2nd sine wave
+frequency_1 = 0.01  # frequency of 1st sine wave
+frequency_2 = 0.01  # frequency of 2nd sine wave
 num_points = 101  # number of points in each direction
 time_duration = 10  # duration of the animation in seconds
 frames_per_second = 24  # frames per second in the animation
