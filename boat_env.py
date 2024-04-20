@@ -108,10 +108,10 @@ class BuoyantBoat(gym.Env):
         # self.crosssec_area = 3 * 8  # [m^2]
         # self.steady_sub_h = 1  # [m]
         self.density_water = 1000  # [kg/m^3]
-        self.mass_boat = 11000  # [kg]
+        self.mass_boat = 6000  # [kg]
         # self.mass_boat = 60000  # [kg]
         # self.density_wood = 600  # [kg/m^3]
-        self._dimensions = (4.0, 10.0, 2.0)
+        self._dimensions = (2.0, 5.0, 1.0)
         self.relative_coordinates = np.array([0, 3, 2])
         self.width = self._dimensions[0]
         self.length = self._dimensions[1]
@@ -158,19 +158,7 @@ class BuoyantBoat(gym.Env):
         )
 
         self.wave_generator = WaveGenerator(
-            coords=np.array(
-                [  # top view, forward is up
-                    [
-                        [self.length / 4, -self.width / 4, self.height / 2],  # top left
-                        [self.length / 4, self.width / 4, self.height / 2],  # top right
-                    ],
-                    [
-                        [-self.length / 4, -self.width / 4, self.height / 2],  # bottom left
-                        [-self.length / 4, self.width / 4, self.height / 2],  # bottom right
-                    ],
-                ],
-                dtype=np.float64,
-            )
+            coords=self._force_applied_coords
         )
 
         self.wave_state = self.wave_generator.update(0)
@@ -306,12 +294,15 @@ class BuoyantBoat(gym.Env):
             # print("breakpoint")
             pass
         torques = np.zeros((2, 2))
+        plane_normal_local = np.dot(self.combined_rotation_matrix, np.array([0, 0, 1]))  # Global combined rotation matrix dot z axis unit vector
+        plane_normal_unit = plane_normal_local / np.linalg.norm(plane_normal_local)
+        dot_product = np.dot(plane_normal_unit, np.array([0, 0, 1]))
         for i in range(2):
             for j in range(2):
                 _dx = math.pow(self._force_applied_coords[:, :, :2][i][j][0], 2)
                 _dy = math.pow(self._force_applied_coords[:, :, :2][i][j][1], 2)
                 _distance_to_mc = math.pow(_dx + _dy, 0.5)
-                torques[i][j] = _distance_to_mc * self.forces[i][j]  # sin = 1
+                torques[i][j] = _distance_to_mc * self.forces[i][j] * np.sin(np.arcsin(np.clip(dot_product, -1, 1)))  # TODO: add sine of plane normal angle
         torque_pitch = (torques[0][1] + torques[1][1]) - (torques[0][0] + torques[1][0])  # (BL+BR) - (TL+TR)
         torque_roll = (torques[1][0] + torques[1][1]) - (torques[0][0] + torques[0][1])  # (BR+TR) - (BL+TL)
         return np.array((torque_pitch, torque_roll))
@@ -409,7 +400,7 @@ class BuoyantBoat(gym.Env):
         self.angular_velocity += self.angular_acceleration * self.dt
         self.orientation[:2] += self.angular_velocity * self.dt
         # Clip the values in the array to the limits np.minimum(a_max, np.maximum(a, a_min))
-        self.orientation = np.clip(self.orientation, -np.pi / 4, np.pi / 4)
+        # self.orientation = np.clip(self.orientation, -np.pi / 4, np.pi / 4)
 
         # TODO: DH model base coords based on rotation from self.orientation
 
@@ -426,6 +417,7 @@ class BuoyantBoat(gym.Env):
             self.angular_velocity,  # boat angular velocity
             self.rope_load,  # load position
             self.wave_state[0][0],
+            # self.wave_generator._wave_plane,
         ]
 
         reward = self.reward_function()
@@ -493,14 +485,14 @@ if __name__ == "__main__":
     # plt.plot(positions[:, 1], label='Position Y')
     plt.plot(np_positions[:, 2], label="Position Z")
     plt.plot(np_wave_data, label="Wave position")
-    plt.title("Position over time")
+    plt.title("Position over time, 1ts = 0.01s")
     plt.legend()
 
     plt.subplot(3, 1, 2)
     plt.plot(np_orientations[:, 0], label="Orientation Roll")
     plt.plot(np_orientations[:, 1], label="Orientation Pitch")
     # plt.plot(orientations[:, 2], label='Orientation Yaw')
-    plt.title("Orientation over time")
+    plt.title("Orientation over time, 1ts = 0.01s")
     plt.legend()
 
     # plt.subplot(3, 1, 3)
@@ -514,7 +506,7 @@ if __name__ == "__main__":
     plt.plot(np_current_buyoancy_forces[:, 1, 0], label="buoyant force #2")
     plt.plot(np_current_buyoancy_forces[:, 0, 1], label="buoyant force #3")
     plt.plot(np_current_buyoancy_forces[:, 1, 1], label="buoyant force #4")
-    plt.title("buoyant forces")
+    plt.title("buoyant forces,  1ts = 0.01s")
     plt.legend()
 
     plt.tight_layout()

@@ -15,7 +15,7 @@ dependencies:
   - matplotlib
   - pip
   - pip:
-    - stable-baselines3=2.2.1
+    - stable-baselines3==2.2.1
   # Development
   - black>=23                         # Assists with automatic formatting to conform to PEP8.
   - conda-forge::autoflake            # Removes unused imports
