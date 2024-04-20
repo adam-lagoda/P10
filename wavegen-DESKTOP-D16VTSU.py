@@ -3,12 +3,12 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
 # Parameters
-frequency_1 = 0.0062  # frequency of 1st sine wave
-frequency_2 = 0.0062  # frequency of 2nd sine wave
+frequency_1 = 0.25  # frequency of 1st sine wave
+frequency_2 = 0.25  # frequency of 2nd sine wave
 num_points = 101  # number of points in each direction
 time_duration = 10  # duration of the animation in seconds
-frames_per_second = 100  # frames per second in the animation
-timestep_delay = 0.5  # delay in seconds for the second wave
+frames_per_second = 24  # frames per second in the animation
+timestep_delay = 0.1  # delay in seconds for the second wave
 
 # Create a grid of points
 x = np.linspace(-10, 10, num_points)  # [m]
@@ -44,7 +44,7 @@ def update(frame):
     return surf,
 
 # Create animation
-ani = FuncAnimation(fig, update, frames=time_duration * frames_per_second, blit=False, interval=100 / frames_per_second, repeat=True)
+ani = FuncAnimation(fig, update, frames=time_duration * frames_per_second, blit=False, interval=1000 / frames_per_second, repeat=True)
 
 # Display animation
 plt.show()

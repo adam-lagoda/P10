@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from boat_env_cleared import BuoyantBoat  # Assuming this is where your environment class is defined
+from boat_env import BuoyantBoat  # Assuming this is where your environment class is defined
 from stable_baselines3 import DQN
 
 # Load the trained model
