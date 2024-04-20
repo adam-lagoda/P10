@@ -110,7 +110,7 @@ class BuoyantBoat(gym.Env):
         # self.crosssec_area = 3 * 8  # [m^2]
         # self.steady_sub_h = 1  # [m]
         self.density_water = 1000  # [kg/m^3]
-        self.mass_boat = 10000  # [kg]
+        self.mass_boat = 11000  # [kg]
         # self.mass_boat = 60000  # [kg]
         # self.density_wood = 600  # [kg/m^3]
         self._dimensions = (4.0, 10.0, 2.0)
@@ -388,7 +388,7 @@ class BuoyantBoat(gym.Env):
         self.angular_velocity += self.angular_acceleration * self.dt
         self.orientation[:2] += self.angular_velocity * self.dt
         # Clip the values in the array to the limits np.minimum(a_max, np.maximum(a, a_min))
-        # self.orientation = np.clip(self.orientation , -np.pi / 4, np.pi / 4)
+        self.orientation = np.clip(self.orientation , -np.pi / 4, np.pi / 4)
 
         # TODO: DH model base coords based on rotation from self.orientation
         
@@ -439,7 +439,7 @@ if __name__ == "__main__":
     _current_buyoancy_forces = []
     wave_data = []
 
-    for i in range(400):
+    for i in range(1000):
         # Take a step in the environment
         state, _current_buyoancy_force, _, _, _ = env.step(5)  # Assuming action 5 is used for all steps
         
