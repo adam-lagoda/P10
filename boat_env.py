@@ -141,8 +141,8 @@ class BuoyantBoat(gym.Env):
         ]
         self.action = None
 
-        # state variables
-        self.position = np.array([0, 0, 2], dtype=np.float64)  # [x, y, z] [m]
+        # state variables TODO: verify the cooridinate systems (base vs local), convert if necesary
+        self.position = np.array([0, 0, 2], dtype=np.float64)  # [x, y, z] [m] Base Coordinate System
         self.prev_position = np.array([0, 0, 2], dtype=np.float64)  # [x, y, z] [m]
         self.velocity = np.array([0, 0, 0], dtype=np.float64)  # [vx, vy, vz] [m/s]
         self.prev_velocity = np.array([0, 0, 0], dtype=np.float64)  # [vx, vy, vz] [m/s]
@@ -165,24 +165,24 @@ class BuoyantBoat(gym.Env):
 
         self._force_applied_coords = np.array([  # top view, forward is up
             [
-                [-self.width/4, self.length/4, self.height/2],  # top left
-                [self.width/4, self.length/4, self.height/2]  # top right
+                [self.length/4, -self.width/4, self.height/2],  # top left
+                [self.length/4, self.width/4, self.height/2]  # top right
             ],
             [
-                [-self.width/4, -self.length/4, self.height/2],  # bottom left
-                [self.width/4, -self.length/4, self.height/2]  # bottom right
+                [-self.length/4, -self.width/4, self.height/2],  # bottom left
+                [-self.length/4, self.width/4, self.height/2]  # bottom right
             ],
         ], dtype=np.float64)
 
         self.wave_generator = WaveGenerator(
             coords=np.array([  # top view, forward is up
                 [
-                    [-self.width/4, self.length/4, self.height/2],  # top left
-                    [self.width/4, self.length/4, self.height/2]  # top right
+                    [self.length/4, -self.width/4, self.height/2],  # top left
+                    [self.length/4, self.width/4, self.height/2]  # top right
                 ],
                 [
-                    [-self.width/4, -self.length/4, self.height/2],  # bottom left
-                    [self.width/4, -self.length/4, self.height/2]  # bottom right
+                    [-self.length/4, -self.width/4, self.height/2],  # bottom left
+                    [-self.length/4, self.width/4, self.height/2]  # bottom right
                 ],
             ], dtype=np.float64)
         )
@@ -256,7 +256,7 @@ class BuoyantBoat(gym.Env):
 
     def get_buoyancy(self):
         # Calculate the combined rotation matrix
-        self.combined_rotation_matrix = self.rotation_z(self.orientation[2]) @ self.rotation_y(self.orientation[1]) @ self.rotation_x(self.orientation[0])
+        self.combined_rotation_matrix = self.rotation_z(self.orientation[2]) @ self.rotation_y(self.orientation[1]) @ self.rotation_x(self.orientation[0])  # ZYX Tait-Bryan angles convention
         # Apply the rotation to the local coordinate system of the force application points
         # Then add the object's position to translate the points to the global coordinate system
         force_applied_points_global = np.dot(self._force_applied_coords, self.combined_rotation_matrix.T) + self.position
@@ -439,7 +439,7 @@ if __name__ == "__main__":
     _current_buyoancy_forces = []
     wave_data = []
 
-    for i in range(4000):
+    for i in range(400):
         # Take a step in the environment
         state, _current_buyoancy_force, _, _, _ = env.step(5)  # Assuming action 5 is used for all steps
         
