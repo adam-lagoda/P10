@@ -27,7 +27,7 @@ while not done:
 state_log = np.array(state_log)
 
 # Create subplots for each state dimension
-fig, axs = plt.subplots(state_log.shape[1]+1, figsize=(10, 10))
+fig, axs = plt.subplots(state_log.shape[1] + 1, figsize=(10, 10))
 
 axs[0].plot(state_log[:, 0])
 axs[0].set_title("State 0 (boat_pos) over Time")
@@ -48,4 +48,3 @@ axs[2].set_ylabel("Reward")
 plt.legend()
 plt.tight_layout()
 plt.show()
-

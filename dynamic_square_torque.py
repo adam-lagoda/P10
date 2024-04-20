@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class DynamicSquare:
     def __init__(self, mass, dimensions, timestep):
         self.mass = mass
@@ -20,12 +21,15 @@ class DynamicSquare:
         self._torques = np.zeros((4, 3))
         self.total_torque = np.zeros(3)
         # top view, forward is up
-        self._force_applied_coords = np.array([
-            [self.width/4, self.length/4, self.height/2],  # bottom left
-            [3*self.width/4, self.length/4, self.height/2],  # bottom right
-            [3*self.width/4, 3*self.length/4, self.height/2],  # top right
-            [self.width/4, 3*self.length/4, self.height/2],  # top left
-        ], dtype=np.float64)
+        self._force_applied_coords = np.array(
+            [
+                [self.width / 4, self.length / 4, self.height / 2],  # bottom left
+                [3 * self.width / 4, self.length / 4, self.height / 2],  # bottom right
+                [3 * self.width / 4, 3 * self.length / 4, self.height / 2],  # top right
+                [self.width / 4, 3 * self.length / 4, self.height / 2],  # top left
+            ],
+            dtype=np.float64,
+        )
 
     def apply_external_force(self, corner_index, force):
         self.forces[corner_index] = force
@@ -34,27 +38,27 @@ class DynamicSquare:
         self._torques = np.cross(self._force_applied_coords - self.position, self.forces)
         self.total_torque = np.sum(self._torques, axis=0)
         return self.total_torque
-    
+
     def simulate_step(self):
         # Calculate net forces
         net_force = np.sum(self.forces, axis=0)
-        
+
         # Calculate net torques
         net_torque = self.calculate_torques()
-        
+
         # Linear motion equations
         acceleration = net_force / self.mass
         self.velocity += acceleration * self.timestep
         self.position += self.velocity * self.timestep
-        
+
         # Angular motion equations for roll and pitch
         angular_acceleration = net_torque / self.I
         self.angular_velocity += angular_acceleration * self.timestep
         self.orientation += self.angular_velocity * self.timestep
-        
+
         # Reset the forces after each simulation step
         self.forces = np.zeros((4, 3))
-        
+
     def simulate(self, num_steps):
         for _ in range(num_steps):
             self.simulate_step()

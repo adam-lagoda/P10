@@ -29,15 +29,15 @@ orientations = np.zeros((num_steps, 3))
 # Simulation loop
 for i in range(num_steps):
     # Calculate torque
-    torque = np.cross(forces, length/2 * np.array([[1, 1, 0], [1, -1, 0], [-1, 1, 0], [-1, -1, 0]]))
-    
+    torque = np.cross(forces, length / 2 * np.array([[1, 1, 0], [1, -1, 0], [-1, 1, 0], [-1, -1, 0]]))
+
     # Calculate angular acceleration using Euler's equations
     alpha = np.array([torque[0, 0] / Ixx, torque[1, 1] / Iyy, torque[2, 2] / Izz])
-    
+
     # Update angular velocity and orientation using Euler integration
     omega += alpha * dt
     theta += omega * dt
-    
+
     # Store results
     angular_velocities[i] = omega
     orientations[i] = theta
@@ -48,11 +48,11 @@ pitch = orientations[:, 1]
 
 # Plot results
 time = np.arange(0, total_time, dt)
-plt.plot(time, roll, label='Roll')
-plt.plot(time, pitch, label='Pitch')
-plt.xlabel('Time (s)')
-plt.ylabel('Angle (rad)')
-plt.title('Roll and Pitch angles over time')
+plt.plot(time, roll, label="Roll")
+plt.plot(time, pitch, label="Pitch")
+plt.xlabel("Time (s)")
+plt.ylabel("Angle (rad)")
+plt.title("Roll and Pitch angles over time")
 plt.legend()
 plt.grid(True)
 plt.show()

@@ -1,0 +1,38 @@
+# run `micromamba env create -f environment.yml -y` to install\
+name: drltrain
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - scipy
+  - tqdm
+  - gymnasium
+  - matplotlib
+  - pip
+  - pip:
+    - stable-baselines3=2.2.1
+  # Development
+  - black>=23                         # Assists with automatic formatting to conform to PEP8.
+  - conda-forge::autoflake            # Removes unused imports
+  - conda-forge::docformatter         # Formats docstrings
+  - conda-forge::pyupgrade            # Automatically upgrade syntax for newer versions
+  - conda-build                       # Conda tool for building packages
+  - conda-verify                      # Performs some packaging checks.
+  - flake8>=6                         # Linting
+  - conda-forge::flake8-bugbear       # Detection of likely bugs and anti-patterns
+  - conda-forge::flake8-docstrings    # Linting of docstrings
+  - isort                             # Formatting of import statements for PEP8 compliance
+  - pep8-naming                       # PEP8 naming convention checker
+  - pylint                            # Advanced linting
+  - pytest>=7.0.0                     # Testing module
+  - pytest-cov>=4.0.0                 # Produces coverage reports for tests.
+  - pytest-mock                       # Mocking library
+  - sphinx                            # Documentation build
+  - sphinx_rtd_theme                  # Documentation theme
+  - conda-forge::sphinx-autodoc-typehints   # Type hint support
+  - conda-forge::sphinxcontrib-apidoc       # Automatic documentation from docstrings

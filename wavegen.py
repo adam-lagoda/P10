@@ -15,36 +15,43 @@ x = np.linspace(-10, 10, num_points)  # [m]
 y = np.linspace(-10, 10, num_points)  # [m]
 X, Y = np.meshgrid(x, y)
 
+
 # Wave functions
 def wave1(X, time):
     # return 1/2 * np.sin(frequency_1 * (X + time * 2 * np.pi))
     return np.sin(frequency_1 * (X + time * 2 * np.pi))
 
+
 def wave2(Y, time, delay):
     # return 1/2 * np.sin(frequency_2 * (Y + (time - delay) * 2 * np.pi))
     return np.sin(frequency_2 * (Y + (time - delay) * 2 * np.pi))
 
+
 # Initialize figure
 fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
+ax = fig.add_subplot(111, projection="3d")
 
 
 # Initialize the surface plot
 wave = wave1(X, 0) + wave2(Y, 0, timestep_delay)
-surf = ax.plot_surface(X, Y, wave, cmap='viridis')
+surf = ax.plot_surface(X, Y, wave, cmap="viridis")
+
 
 # Update function for animation
 def update(frame):
     time = frame / frames_per_second
     wave = wave1(X, time) + wave2(Y, time, timestep_delay)
     ax.clear()
-    ax.set_zlim((-10,10))
+    ax.set_zlim((-10, 10))
     # ax.set_aspect('equal')
-    surf = ax.plot_surface(X, Y, wave, cmap='viridis')
-    return surf,
+    surf = ax.plot_surface(X, Y, wave, cmap="viridis")
+    return (surf,)
+
 
 # Create animation
-ani = FuncAnimation(fig, update, frames=time_duration * frames_per_second, blit=False, interval=100 / frames_per_second, repeat=True)
+ani = FuncAnimation(
+    fig, update, frames=time_duration * frames_per_second, blit=False, interval=100 / frames_per_second, repeat=True
+)
 
 # Display animation
 plt.show()
