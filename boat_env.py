@@ -104,7 +104,7 @@ class BuoyantBoat(gym.Env):
         self.gravity = 10  # [m/s^2]
         # self.max_buyoancy = 35  # [N]
         self.max_action = 5
-        self.dt = 0.1  # timestep [s]
+        self.dt = 0.05  # timestep [s]
         # self.crosssec_area = 3 * 8  # [m^2]
         # self.steady_sub_h = 1  # [m]
         self.density_water = 1000  # [kg/m^3]
@@ -112,7 +112,7 @@ class BuoyantBoat(gym.Env):
         # self.mass_boat = 60000  # [kg]
         # self.density_wood = 600  # [kg/m^3]
         self._dimensions = (2.0, 5.0, 1.0)
-        self.relative_coordinates = np.array([0, 3, 2])
+        self.relative_coordinates = np.array([3, 0, 2], dtype=np.float64)
         self.width = self._dimensions[0]
         self.length = self._dimensions[1]
         self.height = self._dimensions[2]
@@ -170,6 +170,7 @@ class BuoyantBoat(gym.Env):
         self.wtb_dist = 15
         self.wtb_height = 50
         self.initial_rope_load = self.rope_load  # Initial length of rope on load side [Meters]
+        self.wtb_crane_position = np.array([self.wtb_dist, 0, self.wtb_height], dtype=np.float64)  # [x, y, z] [m]
 
         # DQN spaces
         self.action_space = spaces.Discrete(11)
@@ -354,14 +355,17 @@ class BuoyantBoat(gym.Env):
         return self.winch_velocity
 
     def DH_load(self):
-        _prev_length = math.sqrt(
-            math.pow(self.wtb_dist + self.prev_winch_position[1], 2)
-            + math.pow(self.wtb_height - self.prev_winch_position[2], 2)
-        )  # 15m from wtb, 50m height of wtb
-        _curr_length = math.sqrt(
-            math.pow(self.wtb_dist - self.winch_position[1], 2) + math.pow(self.wtb_height - self.winch_position[2], 2)
-        )  # TODO: boat is not always facing forward, take that into account when calculating the distance
-        self.rope_dy = _prev_length - _curr_length  # 15m from wtb, 50m height of wtb
+        if self.step_count==1:
+            self.prev_winch_position = self.winch_position
+        # Calculate the distance between the 2 points in 3D
+        _prev_squared_differences = np.square(self.prev_winch_position - self.wtb_crane_position)
+        _prev_sum_of_squares = np.sum(_prev_squared_differences)
+        _prev_length = np.sqrt(_prev_sum_of_squares)
+        _squared_differences = np.square(self.winch_position - self.wtb_crane_position)
+        _sum_of_squares = np.sum(_squared_differences)
+        _curr_length = np.sqrt(_sum_of_squares)
+
+        self.rope_dy = _prev_length - _curr_length
         self.rope_boat -= self.rope_dy  # rope change on boat side
         self.winch_velocity = self.winch_control(self.action)  # TODO: winch model here
         self.rope_load += self.rope_dy + self.winch_velocity  # * self.dt  # rope change on load side
@@ -382,31 +386,34 @@ class BuoyantBoat(gym.Env):
 
         self.action = action
 
+        # Linear motion equations
         _current_buyoancy_forces = self.get_buoyancy()
         _total_external_forces = self.apply_external_force(_current_buyoancy_forces)
-        total_torque = self.calculate_torques()
-
-        # Linear motion equations
-        sum_ext_forces = np.sum(_total_external_forces)
-        # if sum_ext_forces > 1.5*self.mass_boat * self.gravity:
-        #     sum_ext_forces = 1.5* self.mass_boat * self.gravity
-        self.acceleration = (sum_ext_forces - self.mass_boat * self.gravity) / self.mass_boat
+        _drag_coefficient = 0.5
+        if _total_external_forces > 0.0: # buoyant forces working <-> we are underwater
+            _viscous_friction = - _drag_coefficient * np.abs(self.velocity[2])
+        else:
+            _viscous_friction = 0.0
+        sum_ext_forces = np.sum(_total_external_forces) + _viscous_friction
+        _total_forces = sum_ext_forces - self.mass_boat * self.gravity
+        self.acceleration = _total_forces / self.mass_boat
         self.velocity[2] += self.acceleration * self.dt
         self.position += self.velocity * self.dt
 
         # Angular motion equations for roll and pitch
+        total_torque = self.calculate_torques()
         self.angular_acceleration = total_torque / np.array([self.Ixx, self.Iyy])
-        # self.angular_acceleration = total_torque / np.array([self.Ixx, self.Iyy, self.Izz])
         self.angular_velocity += self.angular_acceleration * self.dt
         self.orientation[:2] += self.angular_velocity * self.dt
-        # Clip the values in the array to the limits np.minimum(a_max, np.maximum(a, a_min))
         # self.orientation = np.clip(self.orientation, -np.pi / 4, np.pi / 4)
 
-        # TODO: DH model base coords based on rotation from self.orientation
-
+        # Get position of the winch in Global Coordinate System based on position
+        # relative to center of mass and a combined rotation matrix
         self.winch_position = np.dot(self.relative_coordinates, self.combined_rotation_matrix.T) + self.position
 
         _, self.rope_load, self.winch_velocity = self.DH_load()
+        self.prev_winch_position = copy.deepcopy(self.winch_position)
+
         self.rope_load_cache.append(self.rope_load)
 
         # self.state[1] = self.rope_load
@@ -446,6 +453,7 @@ class BuoyantBoat(gym.Env):
 
 
 if __name__ == "__main__":
+
     env = BuoyantBoat()
     # env.reset()
     # env.step(0)
@@ -458,7 +466,7 @@ if __name__ == "__main__":
     _current_buyoancy_forces = []
     wave_data = []
 
-    for i in tqdm(range(10000)):
+    for i in tqdm(range(1000)):
         # Take a step in the environment
         state, _current_buyoancy_force, _, _, _ = env.step(5)  # Assuming action 5 is used for all steps
 
@@ -485,14 +493,14 @@ if __name__ == "__main__":
     # plt.plot(positions[:, 1], label='Position Y')
     plt.plot(np_positions[:, 2], label="Position Z")
     plt.plot(np_wave_data, label="Wave position")
-    plt.title("Position over time, 1ts = 0.01s")
+    plt.title(f"Position over time, 1ts = {env.dt}s")
     plt.legend()
 
     plt.subplot(3, 1, 2)
     plt.plot(np_orientations[:, 0], label="Orientation Roll")
     plt.plot(np_orientations[:, 1], label="Orientation Pitch")
-    # plt.plot(orientations[:, 2], label='Orientation Yaw')
-    plt.title("Orientation over time, 1ts = 0.01s")
+    plt.plot(np_orientations[:, 2], label='Orientation Yaw')
+    plt.title(f"Orientation over time, 1ts = {env.dt}s")
     plt.legend()
 
     # plt.subplot(3, 1, 3)
@@ -506,7 +514,7 @@ if __name__ == "__main__":
     plt.plot(np_current_buyoancy_forces[:, 1, 0], label="buoyant force #2")
     plt.plot(np_current_buyoancy_forces[:, 0, 1], label="buoyant force #3")
     plt.plot(np_current_buyoancy_forces[:, 1, 1], label="buoyant force #4")
-    plt.title("buoyant forces,  1ts = 0.01s")
+    plt.title(f"buoyant forces,  1ts = {env.dt}s")
     plt.legend()
 
     plt.tight_layout()
