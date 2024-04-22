@@ -1,10 +1,11 @@
+from time import time
+
 from boat_env import BuoyantBoat
 from stable_baselines3 import DQN
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
-from time import time
 
 boat = BuoyantBoat(control_technique="DQN")
 env = Monitor(boat)

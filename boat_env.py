@@ -130,10 +130,10 @@ class BuoyantBoat(gym.Env):
         self.prev_accelerationn = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
         self.orientation = np.array([0, 0, 0], dtype=np.float64)  # [roll, pitch, yaw] [rad]
         self.prev_orientation = np.array([0, 0, 0], dtype=np.float64)  # [roll, pitch, yaw] [rad]
-        self.angular_velocity = np.array([0, 0], dtype=np.float64)  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
-        self.prev_angular_velocity = np.array([0, 0], dtype=np.float64)  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
-        self.angular_acceleration = np.array([0, 0], dtype=np.float64)  # [x, y, z] [m]
-        self.prev_angular_accelerationn = np.array([0, 0], dtype=np.float64)  # [x, y, z] [m]
+        self.angular_velocity = np.array([0, 0, 0], dtype=np.float64)  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
+        self.prev_angular_velocity = np.array([0, 0, 0], dtype=np.float64)  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
+        self.angular_acceleration = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
+        self.prev_angular_accelerationn = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
         self.winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
         self.prev_winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
         self.combined_rotation_matrix = np.zeros(3)
@@ -219,26 +219,45 @@ class BuoyantBoat(gym.Env):
         self.orientation = np.array([0, 0, 0], dtype=np.float64)  # [roll, pitch, yaw] [rad]
         self.prev_orientation = np.array([0, 0, 0], dtype=np.float64)  # [roll, pitch, yaw] [rad]
 
-        self.angular_velocity = np.array([0, 0], dtype=np.float64)  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
-        self.prev_angular_velocity = np.array([0, 0], dtype=np.float64)  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
+        self.angular_velocity = np.array([0, 0, 0], dtype=np.float64)  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
+        self.prev_angular_velocity = np.array(
+            [0, 0, 0], dtype=np.float64
+        )  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
 
         self.winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
         self.prev_winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
 
-        self.state = [
-            self.position,  # boat position
-            self.velocity,  # boat velocity
-            self.orientation,  # boat orientation
-            self.angular_velocity,  # boat angular velocity
-            self.rope_length_load_side,  # load position
-            # self.wave_state[0][0]
-        ]
+        self.state = np.array(
+            [
+                self.position,  # boat position
+                self.velocity,  # boat velocity
+                self.orientation,  # boat orientation
+                self.angular_velocity,  # boat angular velocity
+                self.load_position,  # load position
+                # self.wave_state[0][0]
+            ],
+            dtype=np.float64,
+        )
         self.prev_state = copy.deepcopy(self.state)
+
+        self.obs = np.array(
+            [
+                self.position[2],  # boat position
+                # self.velocity[2],  # boat velocity
+                # self.orientation[0],  # boat orientation
+                # self.orientation[1],  # boat orientation
+                # self.angular_velocity,  # boat angular velocity
+                self.load_position[2],  # load position
+                # self.winch_velocity
+            ],
+            dtype=np.float64,
+        )
 
         self.rope_length_load_side = self.initial_rope_load  # reset load side rope length to intial value
         self.integral = 0.0  # reset integral term for PID
         print("Reset")
-        return self.state
+        info = {}
+        return self.obs, info
 
     def rotation_x(self, roll):  # Rotation matrix for roll
         return np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
@@ -420,8 +439,13 @@ class BuoyantBoat(gym.Env):
         # Angular motion equations for roll and pitch
         total_torque = self.calculate_torques()
         self.angular_acceleration = total_torque / np.array([self.Ixx, self.Iyy])
-        self.angular_velocity += self.angular_acceleration * self.dt
-        self.orientation[:2] += self.angular_velocity * self.dt
+        d_angular_velocity_x = self.angular_acceleration[0] * self.dt
+        d_angular_velocity_y = self.angular_acceleration[1] * self.dt
+        self.angular_velocity += np.array(
+            [d_angular_velocity_x, d_angular_velocity_y, 0],
+            dtype=np.float64,
+        )
+        self.orientation += self.angular_velocity * self.dt
         # self.orientation = np.clip(self.orientation, -np.pi / 4, np.pi / 4)
 
         # Get position of the winch in Global Coordinate System based on position
@@ -439,9 +463,22 @@ class BuoyantBoat(gym.Env):
             self.orientation,  # boat orientation
             self.angular_velocity,  # boat angular velocity
             self.load_position,  # load position
-            self.wave_state[0][0],  # wave heave in top left corner for debugging  # COMMENT OUT FOR TRAINING
-            _current_buyoancy_forces,  # current buoyant forces                    # COMMENT OUT FOR TRAINING
+            self.wave_state[0][0],  # wave heave in top left corner for debugging
+            _current_buyoancy_forces,  # current buoyant forces
         ]
+
+        self.obs = np.array(
+            [
+                self.position[2],  # boat position
+                # self.velocity[2],  # boat velocity
+                # self.orientation[0],  # boat orientation
+                # self.orientation[1],  # boat orientation
+                # self.angular_velocity,  # boat angular velocity
+                self.load_position[2],  # load position
+                # self.winch_velocity
+            ],
+            dtype=np.float64,
+        )
 
         reward = self.reward_function()
         self.step_count = self.step_count + 1
@@ -452,11 +489,11 @@ class BuoyantBoat(gym.Env):
             done = False
 
         info = {}
-        self.obs = np.array([self.position[2], self.rope_length_load_side])
 
         return (
-            copy.deepcopy(self.state), # as our observation space
-            _current_buyoancy_forces,
+            copy.deepcopy(self.obs),
+            # copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
+            reward,
             done,
             False,
             info,
