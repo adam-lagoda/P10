@@ -1,4 +1,4 @@
-from boat_env_cleared import BuoyantBoat
+from boat_env import BuoyantBoat
 from stable_baselines3 import DQN
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.evaluation import evaluate_policy
