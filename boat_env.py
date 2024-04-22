@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import copy
 from tqdm import tqdm
 
+
 class WaveGenerator:
     def __init__(
         self,
@@ -116,15 +117,9 @@ class BuoyantBoat(gym.Env):
         self.width = self._dimensions[0]
         self.length = self._dimensions[1]
         self.height = self._dimensions[2]
-        self.Ixx = (self.mass_boat / 12) * (
-            self.height**2 + self.width**2
-        )  # Moment of inertia about x-axis (kg m^2)
-        self.Iyy = (self.mass_boat / 12) * (
-            self.length**2 + self.width**2
-        )  # Moment of inertia about y-axis (kg m^2)
-        self.Izz = (self.mass_boat / 12) * (
-            self.length**2 + self.height**2
-        )  # Moment of inertia about z-axis (kg m^2)
+        self.Ixx = (self.mass_boat / 12) * (self.height**2 + self.width**2)  # Moment of inertia about x-axis (kg m^2)
+        self.Iyy = (self.mass_boat / 12) * (self.length**2 + self.width**2)  # Moment of inertia about y-axis (kg m^2)
+        self.Izz = (self.mass_boat / 12) * (self.length**2 + self.height**2)  # Moment of inertia about z-axis (kg m^2)
 
         # state variables TODO: verify the cooridinate systems (base vs local), convert if necesary
         self.position = np.array([0, 0, -1], dtype=np.float64)  # [x, y, z] [m] Base Coordinate System
@@ -157,20 +152,27 @@ class BuoyantBoat(gym.Env):
             dtype=np.float64,
         )
 
-        self.wave_generator = WaveGenerator(
-            coords=self._force_applied_coords
-        )
+        self.wave_generator = WaveGenerator(coords=self._force_applied_coords)
 
         self.wave_state = self.wave_generator.update(0)
         self.step_count = 0
         self.winch_velocity = 0  # m/s
 
-        self.rope_boat = 50  # Initial length of rope on boat side [Meters]
-        self.rope_load = 10  # Initial length of rope on load side [Meters]
+        self.rope_length_boat_side = 50  # Initial length of rope on boat side [Meters]
+        self.rope_length_load_side = 10  # Initial length of rope on load side [Meters]
         self.wtb_dist = 15
         self.wtb_height = 50
-        self.initial_rope_load = self.rope_load  # Initial length of rope on load side [Meters]
+        self.initial_rope_load = self.rope_length_load_side  # Initial length of rope on load side [Meters]
+        self.rope_dy = 0
         self.wtb_crane_position = np.array([self.wtb_dist, 0, self.wtb_height], dtype=np.float64)  # [x, y, z] [m]
+        self.load_position = np.array(
+            [
+                self.wtb_crane_position[0],
+                self.wtb_crane_position[1],
+                self.wtb_crane_position[2] - self.rope_length_load_side,
+            ],
+            dtype=np.float64,
+        )
 
         # DQN spaces
         self.action_space = spaces.Discrete(11)
@@ -180,7 +182,7 @@ class BuoyantBoat(gym.Env):
             self.velocity,  # boat velocity
             self.orientation,  # boat orientation
             self.angular_velocity,  # boat angular velocity
-            self.rope_load,  # load position
+            self.rope_length_load_side,  # load position
             # self.wave_state[0][0]
         ]
         self.prev_state = copy.deepcopy(self.state)
@@ -228,12 +230,12 @@ class BuoyantBoat(gym.Env):
             self.velocity,  # boat velocity
             self.orientation,  # boat orientation
             self.angular_velocity,  # boat angular velocity
-            self.rope_load,  # load position
+            self.rope_length_load_side,  # load position
             # self.wave_state[0][0]
         ]
         self.prev_state = copy.deepcopy(self.state)
 
-        self.rope_load = self.initial_rope_load  # reset load side rope length to intial value
+        self.rope_length_load_side = self.initial_rope_load  # reset load side rope length to intial value
         self.integral = 0.0  # reset integral term for PID
         print("Reset")
         return self.state
@@ -295,7 +297,9 @@ class BuoyantBoat(gym.Env):
             # print("breakpoint")
             pass
         torques = np.zeros((2, 2))
-        plane_normal_local = np.dot(self.combined_rotation_matrix, np.array([0, 0, 1]))  # Global combined rotation matrix dot z axis unit vector
+        plane_normal_local = np.dot(
+            self.combined_rotation_matrix, np.array([0, 0, 1])
+        )  # Global combined rotation matrix dot z axis unit vector
         plane_normal_unit = plane_normal_local / np.linalg.norm(plane_normal_local)
         dot_product = np.dot(plane_normal_unit, np.array([0, 0, 1]))
         for i in range(2):
@@ -303,7 +307,9 @@ class BuoyantBoat(gym.Env):
                 _dx = math.pow(self._force_applied_coords[:, :, :2][i][j][0], 2)
                 _dy = math.pow(self._force_applied_coords[:, :, :2][i][j][1], 2)
                 _distance_to_mc = math.pow(_dx + _dy, 0.5)
-                torques[i][j] = _distance_to_mc * self.forces[i][j] * np.sin(np.arcsin(np.clip(dot_product, -1, 1)))  # TODO: add sine of plane normal angle
+                torques[i][j] = (
+                    _distance_to_mc * self.forces[i][j] * np.sin(np.arcsin(np.clip(dot_product, -1, 1)))
+                )  # TODO: add sine of plane normal angle
         torque_pitch = (torques[0][1] + torques[1][1]) - (torques[0][0] + torques[1][0])  # (BL+BR) - (TL+TR)
         torque_roll = (torques[1][0] + torques[1][1]) - (torques[0][0] + torques[0][1])  # (BR+TR) - (BL+TL)
         return np.array((torque_pitch, torque_roll))
@@ -355,24 +361,35 @@ class BuoyantBoat(gym.Env):
         return self.winch_velocity
 
     def DH_load(self):
-        if self.step_count==1:
-            self.prev_winch_position = self.winch_position
-        # Calculate the distance between the 2 points in 3D
-        _prev_squared_differences = np.square(self.prev_winch_position - self.wtb_crane_position)
-        _prev_sum_of_squares = np.sum(_prev_squared_differences)
-        _prev_length = np.sqrt(_prev_sum_of_squares)
+        # Calculate the distance between the 2 points (winch and crane) in 3D
         _squared_differences = np.square(self.winch_position - self.wtb_crane_position)
         _sum_of_squares = np.sum(_squared_differences)
         _curr_length = np.sqrt(_sum_of_squares)
+        if self.step_count == 1:  # initial condition
+            _prev_length = _curr_length
+            self.rope_length_boat_side = _curr_length
+        else:
+            _prev_squared_differences = np.square(self.prev_winch_position - self.wtb_crane_position)
+            _prev_sum_of_squares = np.sum(_prev_squared_differences)
+            _prev_length = np.sqrt(_prev_sum_of_squares)
 
         self.rope_dy = _prev_length - _curr_length
-        self.rope_boat -= self.rope_dy  # rope change on boat side
+        self.rope_length_boat_side -= self.rope_dy  # rope change on boat side
         self.winch_velocity = self.winch_control(self.action)  # TODO: winch model here
-        self.rope_load += self.rope_dy + self.winch_velocity  # * self.dt  # rope change on load side
-        return self.rope_boat, self.rope_load, self.winch_velocity
+        self.rope_length_load_side += self.rope_dy + (self.winch_velocity * self.dt)  # rope change on load side
+
+        self.load_position = np.array(
+            [
+                self.wtb_crane_position[0],
+                self.wtb_crane_position[1],
+                self.wtb_crane_position[0] - self.rope_length_load_side,
+            ],
+            dtype=np.float64,
+        )
+        return self.load_position, self.winch_velocity
 
     def reward_function(self):
-        rope_diff = abs(self.rope_load) - abs(
+        rope_diff = abs(self.rope_length_load_side) - abs(
             self.initial_rope_load
         )  # Difference between rope on load side change with rope disturbance from boat
         scaling_factor = max(0, 1 - abs(rope_diff))  # Linear scaling
@@ -390,8 +407,8 @@ class BuoyantBoat(gym.Env):
         _current_buyoancy_forces = self.get_buoyancy()
         _total_external_forces = self.apply_external_force(_current_buyoancy_forces)
         _drag_coefficient = 0.5
-        if _total_external_forces > 0.0: # buoyant forces working <-> we are underwater
-            _viscous_friction = - _drag_coefficient * np.abs(self.velocity[2])
+        if _total_external_forces > 0.0:  # buoyant forces working <-> we are underwater
+            _viscous_friction = -_drag_coefficient * np.abs(self.velocity[2])
         else:
             _viscous_friction = 0.0
         sum_ext_forces = np.sum(_total_external_forces) + _viscous_friction
@@ -411,10 +428,9 @@ class BuoyantBoat(gym.Env):
         # relative to center of mass and a combined rotation matrix
         self.winch_position = np.dot(self.relative_coordinates, self.combined_rotation_matrix.T) + self.position
 
-        _, self.rope_load, self.winch_velocity = self.DH_load()
+        self.load_position, self.winch_velocity = self.DH_load()
+        # self.rope_load_cache.append(self.rope_length_load_side)
         self.prev_winch_position = copy.deepcopy(self.winch_position)
-
-        self.rope_load_cache.append(self.rope_load)
 
         # self.state[1] = self.rope_load
         self.state = [
@@ -422,9 +438,9 @@ class BuoyantBoat(gym.Env):
             self.velocity,  # boat velocity
             self.orientation,  # boat orientation
             self.angular_velocity,  # boat angular velocity
-            self.rope_load,  # load position
-            self.wave_state[0][0],
-            # self.wave_generator._wave_plane,
+            self.load_position,  # load position
+            self.wave_state[0][0],  # wave heave in top left corner for debugging  # COMMENT OUT FOR TRAINING
+            _current_buyoancy_forces,  # current buoyant forces                    # COMMENT OUT FOR TRAINING
         ]
 
         reward = self.reward_function()
@@ -434,16 +450,17 @@ class BuoyantBoat(gym.Env):
             # self.write_to_csv(self.csv_path + "/rope_load.csv", self.rope_load_cache)
         else:
             done = False
+
         info = {}
-        self.obs = np.array([self.position[2], self.rope_load])
+        self.obs = np.array([self.position[2], self.rope_length_load_side])
 
         return (
-            copy.deepcopy(self.state),
+            copy.deepcopy(self.state), # as our observation space
             _current_buyoancy_forces,
             done,
             False,
             info,
-        )  # TODO: self.state should be self.obs
+        )
 
     def write_to_csv(self, path, data):
         with open(path, "a", newline="") as csvfile:
@@ -468,15 +485,15 @@ if __name__ == "__main__":
 
     for i in tqdm(range(1000)):
         # Take a step in the environment
-        state, _current_buyoancy_force, _, _, _ = env.step(5)  # Assuming action 5 is used for all steps
+        state, _, _, _, _ = env.step(5)  # Assuming action 5 is used for all steps
 
         # Temporary variable to hold current state values
         state_positions.append(state[0])
         state_orientations.append(state[2])
         state_angular_velocities.append(state[3])
         state_load_positions.append(state[4])
-        _current_buyoancy_forces.append(_current_buyoancy_force)
         wave_data.append(state[5])
+        _current_buyoancy_forces.append(state[6])
 
     # Convert lists to numpy arrays for plotting
     np_positions = np.array(state_positions)
@@ -490,7 +507,7 @@ if __name__ == "__main__":
     plt.figure(figsize=(12, 8))
     plt.subplot(3, 1, 1)
     # plt.plot(positions[:, 0], label='Position X')
-    # plt.plot(positions[:, 1], label='Position Y')
+    plt.plot(np_load_position[:, 2], label="Position load")
     plt.plot(np_positions[:, 2], label="Position Z")
     plt.plot(np_wave_data, label="Wave position")
     plt.title(f"Position over time, 1ts = {env.dt}s")
@@ -499,7 +516,7 @@ if __name__ == "__main__":
     plt.subplot(3, 1, 2)
     plt.plot(np_orientations[:, 0], label="Orientation Roll")
     plt.plot(np_orientations[:, 1], label="Orientation Pitch")
-    plt.plot(np_orientations[:, 2], label='Orientation Yaw')
+    plt.plot(np_orientations[:, 2], label="Orientation Yaw")
     plt.title(f"Orientation over time, 1ts = {env.dt}s")
     plt.legend()
 
