@@ -7,6 +7,7 @@ from gymnasium import spaces
 import matplotlib.pyplot as plt
 import copy
 from tqdm import tqdm
+from dh_transform import calculate_dh_rotation_matrice
 
 
 class WaveGenerator:
@@ -158,11 +159,12 @@ class BuoyantBoat(gym.Env):
         self.step_count = 0
         self.winch_velocity = 0  # m/s
 
-        self.rope_length_boat_side = 50  # Initial length of rope on boat side [Meters]
-        self.rope_length_load_side = 10  # Initial length of rope on load side [Meters]
+        self.rope_length_boat_side = 50  # length of rope on boat side [Meters]
+        self.rope_length_load_side = 30  # length of rope on load side [Meters]
         self.wtb_dist = 15
         self.wtb_height = 50
-        self.initial_rope_load = self.rope_length_load_side  # Initial length of rope on load side [Meters]
+        self.initial_rope_length_boat_side = self.rope_length_boat_side  # Initial length of rope on boat side [Meters]
+        self.initial_rope_length_load_side = self.rope_length_load_side  # Initial length of rope on load side [Meters]
         self.rope_dy = 0
         self.wtb_crane_position = np.array([self.wtb_dist, 0, self.wtb_height], dtype=np.float64)  # [x, y, z] [m]
         self.load_position = np.array(
@@ -253,7 +255,8 @@ class BuoyantBoat(gym.Env):
             dtype=np.float64,
         )
 
-        self.rope_length_load_side = self.initial_rope_load  # reset load side rope length to intial value
+        self.rope_length_load_side = self.initial_rope_length_load_side  # reset load side rope length to intial value
+        self.rope_length_boat_side = self.initial_rope_length_boat_side  # reset boat side rope length to intial value
         self.integral = 0.0  # reset integral term for PID
         print("Reset")
         info = {}
@@ -406,10 +409,51 @@ class BuoyantBoat(gym.Env):
             dtype=np.float64,
         )
         return self.load_position, self.winch_velocity
+    
+    def compute_dh_model(self):
+        # Calculate the vector between the winch and the crane
+        vector_x = self.wtb_crane_position[0] - self.winch_position[0]
+        vector_y = self.wtb_crane_position[1] - self.winch_position[1]
+        vector_z = self.wtb_crane_position[2] - self.winch_position[2]
+        # Calculate the magnitude (length) of the vector in the XY plane
+        xy_magnitude = math.sqrt(vector_x**2 + vector_y**2)
+        # Calculate the magnitude (length) of the full vector
+        full_magnitude = math.sqrt(vector_x**2 + vector_y**2 + vector_z**2)
+        angle = math.acos(xy_magnitude / full_magnitude)  # TODO: what is the reference to which we calculate angles
+
+        # Calculate the distance between the 2 points (winch and crane) in 3D
+        _squared_differences = np.square(self.winch_position - self.wtb_crane_position)
+        _sum_of_squares = np.sum(_squared_differences)
+        _curr_length = np.sqrt(_sum_of_squares)
+        if self.step_count == 0:  # initial condition
+            _prev_length = _curr_length
+        else:
+            _prev_squared_differences = np.square(self.prev_winch_position - self.wtb_crane_position)
+            _prev_sum_of_squares = np.sum(_prev_squared_differences)
+            _prev_length = np.sqrt(_prev_sum_of_squares)
+
+        self.rope_dy = _prev_length - _curr_length
+
+        self.winch_velocity = self.winch_control(self.action)
+
+        total_displacement_matrix = calculate_dh_rotation_matrice(
+            theta_1=np.pi/2 - angle,
+            d1=-self.rope_dy,
+            d2=self.rope_dy + (self.winch_velocity * self.dt),
+            initial_boat_rope_length=self.initial_rope_length_boat_side,
+            intital_load_rope_length=self.initial_rope_length_load_side,
+        )
+        p_vec = np.array([self.winch_position[0], self.winch_position[1], -self.winch_position[2], 1])
+        # TODO: is the order of coordinates correct
+        # self.load_position = np.dot(p_vec, total_displacement_matrix.T)
+        position = total_displacement_matrix @ p_vec
+        self.load_position = np.array([position[0], position[1], position[2]])
+        return self.load_position, self.winch_velocity
+
 
     def reward_function(self):
         rope_diff = abs(self.rope_length_load_side) - abs(
-            self.initial_rope_load
+            self.initial_rope_length_load_side
         )  # Difference between rope on load side change with rope disturbance from boat
         scaling_factor = max(0, 1 - abs(rope_diff))  # Linear scaling
         reward = scaling_factor * 2 - 1  # Scale between -1 and 1 reward
@@ -452,7 +496,7 @@ class BuoyantBoat(gym.Env):
         # relative to center of mass and a combined rotation matrix
         self.winch_position = np.dot(self.relative_coordinates, self.combined_rotation_matrix.T) + self.position
 
-        self.load_position, self.winch_velocity = self.DH_load()
+        self.load_position, self.winch_velocity = self.compute_dh_model()
         # self.rope_load_cache.append(self.rope_length_load_side)
         self.prev_winch_position = copy.deepcopy(self.winch_position)
 
@@ -467,7 +511,7 @@ class BuoyantBoat(gym.Env):
             _current_buyoancy_forces,  # current buoyant forces
         ]
 
-        self.obs = np.array(
+        self.obs = np.array(  # TODO: change to self.observation_space
             [
                 self.position[2],  # boat position
                 # self.velocity[2],  # boat velocity
@@ -491,8 +535,8 @@ class BuoyantBoat(gym.Env):
         info = {}
 
         return (
-            copy.deepcopy(self.obs),
-            # copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
+            # copy.deepcopy(self.obs),
+            copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
             reward,
             done,
             False,
