@@ -177,7 +177,7 @@ class BuoyantBoat(gym.Env):
         )
 
         # DQN spaces
-        self.action_space = spaces.Discrete(11)
+        self.action_space = spaces.Box(low=-5, high=5, shape=(1,), dtype=np.float64)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,))
         self.state = [
             self.position,  # boat position
@@ -358,28 +358,7 @@ class BuoyantBoat(gym.Env):
 
     def interpret_action(self, action):
         # print(f"Chosen action = {action}")
-        if action == 0:
-            self.winch_velocity = -5
-        elif action == 1:
-            self.winch_velocity = -4
-        elif action == 2:
-            self.winch_velocity = -3
-        elif action == 3:
-            self.winch_velocity = -2
-        elif action == 4:
-            self.winch_velocity = -1
-        elif action == 5:
-            self.winch_velocity = 0
-        elif action == 6:
-            self.winch_velocity = 1
-        elif action == 7:
-            self.winch_velocity = 2
-        elif action == 8:
-            self.winch_velocity = 3
-        elif action == 9:
-            self.winch_velocity = 4
-        else:  # action == 10
-            self.winch_velocity = 5
+        self.winch_velocity = action
         return self.winch_velocity
 
     def DH_load(self):
@@ -470,7 +449,7 @@ class BuoyantBoat(gym.Env):
         _current_buyoancy_forces = self.get_buoyancy()
         _total_external_forces = self.apply_external_force(_current_buyoancy_forces)
         _drag_coefficient = 0.5
-        if _total_external_forces > 0.0:  # buoyant forces working <-> we are underwater
+        if _total_external_forces > 0.0:  # buoyant forces working <-> we are underwater <-> viscous friction is acting
             _viscous_friction = -_drag_coefficient * np.abs(self.velocity[2])  # TODO: revisit and verify
         else:
             _viscous_friction = 0.0
@@ -535,8 +514,8 @@ class BuoyantBoat(gym.Env):
         info = {}
 
         return (
-            # copy.deepcopy(self.obs),
-            copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
+            copy.deepcopy(self.obs),
+            # copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
             reward,
             done,
             False,

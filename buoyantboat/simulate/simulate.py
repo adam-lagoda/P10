@@ -11,7 +11,7 @@ package_path = os.path.abspath(os.path.join(os.getcwd()))
 package_path = package_path[0].upper() + package_path[1:]
 if package_path not in sys.path:
     sys.path.append(package_path)
-from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position noqa: E402
+from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position; noqa: E402
 
 if __name__ == "__main__":
 

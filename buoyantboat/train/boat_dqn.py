@@ -1,11 +1,17 @@
+import os
+import sys
 from time import time
-
-from buoyantboat.boat_env import BuoyantBoat
 from stable_baselines3 import DQN
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
+
+package_path = os.path.abspath(os.path.join(os.getcwd()))
+package_path = package_path[0].upper() + package_path[1:]
+if package_path not in sys.path:
+    sys.path.append(package_path)
+from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position; noqa: E402
 
 boat = BuoyantBoat(control_technique="DQN")
 env = Monitor(boat)
