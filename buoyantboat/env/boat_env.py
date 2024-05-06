@@ -177,7 +177,11 @@ class BuoyantBoat(gym.Env):
         )
 
         # DQN spaces
-        self.action_space = spaces.Box(low=-5, high=5, shape=(1,), dtype=np.float64)
+        if control_technique == "SAC":
+            self.action_space = spaces.Box(low=-5, high=5, shape=(1,), dtype=np.float64)
+        else:
+            self.action_space = spaces.Discrete(11)
+
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,))
         self.state = [
             self.position,  # boat position
@@ -203,7 +207,7 @@ class BuoyantBoat(gym.Env):
         self.integral = 0.0
 
         # DQN parameters
-        self.control_technique: Literal["DQN", "PID"] = control_technique
+        self.control_technique: Literal["DQN", "PID", "SAC"] = control_technique
 
         self.csv_path = "./csv"
         self.rope_load_cache = []
@@ -358,8 +362,33 @@ class BuoyantBoat(gym.Env):
 
     def interpret_action(self, action):
         # print(f"Chosen action = {action}")
-        self.winch_velocity = action
-        return self.winch_velocity
+        if self.control_technique == "SAC":
+            self.winch_velocity = action
+            return self.winch_velocity
+        else:
+            if action == 0:
+                self.winch_velocity = -5
+            elif action == 1:
+                self.winch_velocity = -4
+            elif action == 2:
+                self.winch_velocity = -3
+            elif action == 3:
+                self.winch_velocity = -2
+            elif action == 4:
+                self.winch_velocity = -1
+            elif action == 5:
+                self.winch_velocity = 0
+            elif action == 6:
+                self.winch_velocity = 1
+            elif action == 7:
+                self.winch_velocity = 2
+            elif action == 8:
+                self.winch_velocity = 3
+            elif action == 9:
+                self.winch_velocity = 4
+            else:  # action == 10
+                self.winch_velocity = 5
+            return self.winch_velocity
 
     def DH_load(self):
         # Calculate the distance between the 2 points (winch and crane) in 3D
@@ -514,8 +543,8 @@ class BuoyantBoat(gym.Env):
         info = {}
 
         return (
-            copy.deepcopy(self.obs),
-            # copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
+            # copy.deepcopy(self.obs),
+            copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
             reward,
             done,
             False,

@@ -15,7 +15,7 @@ from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position
 
 if __name__ == "__main__":
 
-    env = BuoyantBoat()
+    env = BuoyantBoat(control_technique="DQN")
     # env.reset()
     # env.step(0)
     _ = env.reset()
