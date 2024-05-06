@@ -340,30 +340,15 @@ class BuoyantBoat(gym.Env):
         torque_roll = (torques[1][0] + torques[1][1]) - (torques[0][0] + torques[0][1])  # (BR+TR) - (BL+TL)
         return np.array((torque_pitch, torque_roll))
 
-    def winch_control(self, action=0):
-        if self.control_technique == "PID":  # check if PID is enabled
-            _scale = 1
-            _setpoint = 0
-            error = _setpoint - self.rope_dy
-            proportional_term = self.kp * error
-            self.integral += error * self.dt
-            integral_term = self.ki * self.integral
-            derivative_term = self.kd * ((error - self.prev_error) / self.dt)
-            pid_output = proportional_term + integral_term + derivative_term
-            self.prev_error = error
-
-            self.winch_velocity += _scale * pid_output
-        elif self.control_technique == "DQN":
-            self.winch_velocity = self.interpret_action(action)
-        else:
-            raise ValueError("No control technique specified")
+    def winch_control(self, action):
+        self.winch_velocity = self.interpret_action(action)
 
         return self.winch_velocity
 
     def interpret_action(self, action):
         # print(f"Chosen action = {action}")
         if self.control_technique == "SAC":
-            self.winch_velocity = action
+            self.winch_velocity = action[0]
             return self.winch_velocity
         else:
             if action == 0:
@@ -390,35 +375,8 @@ class BuoyantBoat(gym.Env):
                 self.winch_velocity = 5
             return self.winch_velocity
 
-    def DH_load(self):
-        # Calculate the distance between the 2 points (winch and crane) in 3D
-        _squared_differences = np.square(self.winch_position - self.wtb_crane_position)
-        _sum_of_squares = np.sum(_squared_differences)
-        _curr_length = np.sqrt(_sum_of_squares)
-        if self.step_count == 1:  # initial condition
-            _prev_length = _curr_length
-            self.rope_length_boat_side = _curr_length
-        else:
-            _prev_squared_differences = np.square(self.prev_winch_position - self.wtb_crane_position)
-            _prev_sum_of_squares = np.sum(_prev_squared_differences)
-            _prev_length = np.sqrt(_prev_sum_of_squares)
 
-        self.rope_dy = _prev_length - _curr_length
-        self.rope_length_boat_side -= self.rope_dy  # rope change on boat side
-        self.winch_velocity = self.winch_control(self.action)  # TODO: winch model here
-        self.rope_length_load_side += self.rope_dy + (self.winch_velocity * self.dt)  # rope change on load side
-
-        self.load_position = np.array(
-            [
-                self.wtb_crane_position[0],
-                self.wtb_crane_position[1],
-                self.wtb_crane_position[0] - self.rope_length_load_side,
-            ],
-            dtype=np.float64,
-        )
-        return self.load_position, self.winch_velocity
-    
-    def compute_dh_model(self):
+    def compute_dh_model(self, action):
         # Calculate the vector between the winch and the crane
         vector_x = self.wtb_crane_position[0] - self.winch_position[0]
         vector_y = self.wtb_crane_position[1] - self.winch_position[1]
@@ -441,10 +399,11 @@ class BuoyantBoat(gym.Env):
             _prev_length = np.sqrt(_prev_sum_of_squares)
 
         self.rope_dy = _prev_length - _curr_length
+        print(f"rope_dy={self.rope_dy}")
 
-        self.winch_velocity = self.winch_control(self.action)
+        self.winch_velocity = self.winch_control(action)
 
-        total_displacement_matrix = calculate_dh_rotation_matrice(  # use the one from mode/model_validation/testcase1.py
+        total_displacement_matrix = calculate_dh_rotation_matrice(
             theta_1=np.pi/2 - angle,
             d1=-self.rope_dy,
             d2=self.rope_dy + (self.winch_velocity * self.dt),
@@ -460,19 +419,17 @@ class BuoyantBoat(gym.Env):
 
 
     def reward_function(self):
-        rope_diff = abs(self.rope_length_load_side) - abs(
-            self.initial_rope_length_load_side
-        )  # Difference between rope on load side change with rope disturbance from boat
-        scaling_factor = max(0, 1 - abs(rope_diff))  # Linear scaling
-        reward = scaling_factor * 2 - 1  # Scale between -1 and 1 reward
-        # reward = -abs(rope_diff)
-        # print(reward)
+        # scaling_factor = max(0, 1 - abs(self.rope_dy))  # Linear scaling
+        # reward = scaling_factor * 2 - 1  # Scale between -1 and 1 reward
+        reward = -10*abs(self.rope_dy)
+        # print(f"Reward={reward}")
         return reward
 
     def step(self, action):
         self.wave_state = self.wave_generator.update(self.step_count)
 
         self.action = action
+        print(f"Action={action}")
 
         # Linear motion equations
         _current_buyoancy_forces = self.get_buoyancy()
@@ -504,7 +461,8 @@ class BuoyantBoat(gym.Env):
         # relative to center of mass and a combined rotation matrix
         self.winch_position = np.dot(self.relative_coordinates, self.combined_rotation_matrix.T) + self.position
 
-        self.load_position, self.winch_velocity = self.compute_dh_model()
+        self.load_position, self.winch_velocity = self.compute_dh_model(action)
+        print(f"winch_dl={self.winch_velocity*self.dt}")
         # self.rope_load_cache.append(self.rope_length_load_side)
         self.prev_winch_position = copy.deepcopy(self.winch_position)
 
@@ -522,12 +480,7 @@ class BuoyantBoat(gym.Env):
         self.obs = np.array(  # TODO: change to self.observation_space
             [
                 self.position[2],  # boat position
-                # self.velocity[2],  # boat velocity
-                # self.orientation[0],  # boat orientation
-                # self.orientation[1],  # boat orientation
-                # self.angular_velocity,  # boat angular velocity
                 self.load_position[2],  # load position
-                # self.winch_velocity
             ],
             dtype=np.float64,
         )
@@ -543,8 +496,8 @@ class BuoyantBoat(gym.Env):
         info = {}
 
         return (
-            # copy.deepcopy(self.obs),
-            copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
+            copy.deepcopy(self.obs),
+            # copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
             reward,
             done,
             False,

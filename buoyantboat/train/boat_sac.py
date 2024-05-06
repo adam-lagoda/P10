@@ -15,7 +15,7 @@ if package_path not in sys.path:
     sys.path.append(package_path)
 from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position; noqa: E402
 
-boat = BuoyantBoat(control_technique="SAC")  # TODO: implement correct control_technique
+boat = BuoyantBoat(control_technique="SAC")
 env = Monitor(boat)
 
 # Initialize RL algorithm type and hyperparameters
@@ -46,7 +46,7 @@ kwargs = {}
 kwargs["callback"] = callbacks
 
 # Train for a certain number of timesteps
-model.learn(total_timesteps=10000, tb_log_name="boat_heave", **kwargs)
+model.learn(total_timesteps=10000, tb_log_name="boat_heave_sac", **kwargs)
 
 # Save policy weights
-model.save("boat_heave_comp_policy")
+model.save("boat_heave_comp_SAC_policy")
