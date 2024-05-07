@@ -136,7 +136,7 @@ class BuoyantBoat(gym.Env):
         self.angular_acceleration = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
         self.prev_angular_accelerationn = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
         self.winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
-        self.prev_winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
+        # self.prev_winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
         self.combined_rotation_matrix = np.zeros(3)
 
         self._force_applied_coords = np.array(
@@ -427,14 +427,14 @@ class BuoyantBoat(gym.Env):
         # reward = -10*abs(self.rope_dy)
         load_velocity = (self.prev_load_postion[2] - self.load_position[2])/self.dt
         reward = -10*abs(preset-load_velocity)
-        # print(f"Reward={reward}")
+        print(f"Reward={reward}")
         return reward
 
     def step(self, action):
         self.wave_state = self.wave_generator.update(self.step_count)
 
         self.action = action
-        print(f"Action={action}")
+        # print(f"Action={action}")
 
         # Linear motion equations
         _current_buyoancy_forces = self.get_buoyancy()
@@ -467,10 +467,9 @@ class BuoyantBoat(gym.Env):
         self.winch_position = np.dot(self.relative_coordinates, self.combined_rotation_matrix.T) + self.position
 
         self.load_position, self.winch_velocity = self.compute_dh_model(action)
-        print(f"winch_dl={self.winch_velocity*self.dt}")
+        # print(f"winch_dl={self.winch_velocity*self.dt}")
         # self.rope_load_cache.append(self.rope_length_load_side)
-        self.prev_winch_position = copy.deepcopy(self.winch_position)
-        self.prev_load_postion = copy.deepcopy(self.load_position)
+        # self.prev_winch_position = copy.deepcopy(self.winch_position)
 
         # self.state[1] = self.rope_load
         self.state = [
@@ -499,11 +498,12 @@ class BuoyantBoat(gym.Env):
         else:
             done = False
 
+        self.prev_load_postion = copy.deepcopy(self.load_position)
         info = {}
 
         return (
-            # copy.deepcopy(self.obs),
-            copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
+            copy.deepcopy(self.obs),
+            # copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
             reward,
             done,
             False,
