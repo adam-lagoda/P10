@@ -51,7 +51,7 @@ if __name__ == "__main__":
     plt.figure(figsize=(12, 8))
     plt.subplot(4, 1, 1)
     # plt.plot(positions[:, 0], label='Position X')
-    plt.plot(np_load_position[:, 2]+40, label="Position load")
+    plt.plot(np_load_position[:, 2], label="Position load")
     plt.plot(np_positions[:, 2], label="Position Boat CM")
     plt.plot(np_wave_data, label="Wave height")
     plt.title(f"Position over time, 1ts = {env.dt}s")
