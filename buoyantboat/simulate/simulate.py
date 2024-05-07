@@ -15,7 +15,7 @@ from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position
 
 if __name__ == "__main__":
 
-    env = BuoyantBoat(control_technique="DQN")
+    env = BuoyantBoat(control_technique="SAC")
     # env.reset()
     # env.step(0)
     _ = env.reset()
@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
     for i in tqdm(range(1000)):
         # Take a step in the environment
-        state, _, _, _, _ = env.step(5)  # Assuming action 5 is used for all steps
+        state, _, _, _, _ = env.step([0.0])  # Assuming action 5 is used for all steps
 
         # Temporary variable to hold current state values
         state_positions.append(state[0])
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     plt.figure(figsize=(12, 8))
     plt.subplot(4, 1, 1)
     # plt.plot(positions[:, 0], label='Position X')
-    # plt.plot(np_load_position[:, 2], label="Position load")
+    plt.plot(np_load_position[:, 2]+40, label="Position load")
     plt.plot(np_positions[:, 2], label="Position Boat CM")
     plt.plot(np_wave_data, label="Wave height")
     plt.title(f"Position over time, 1ts = {env.dt}s")

@@ -163,18 +163,20 @@ class BuoyantBoat(gym.Env):
         self.rope_length_load_side = 30  # length of rope on load side [Meters]
         self.wtb_dist = 15
         self.wtb_height = 50
-        self.initial_rope_length_boat_side = self.rope_length_boat_side  # Initial length of rope on boat side [Meters]
-        self.initial_rope_length_load_side = self.rope_length_load_side  # Initial length of rope on load side [Meters]
+        self.initial_rope_length_boat_side = copy.deepcopy(self.rope_length_boat_side)  # Initial length of rope on boat side [Meters]
+        self.initial_rope_length_load_side = copy.deepcopy(self.rope_length_load_side)  # Initial length of rope on load side [Meters]
         self.rope_dy = 0
+        self.added_rope_winch = 0
         self.wtb_crane_position = np.array([self.wtb_dist, 0, self.wtb_height], dtype=np.float64)  # [x, y, z] [m]
         self.load_position = np.array(
             [
                 self.wtb_crane_position[0],
                 self.wtb_crane_position[1],
-                self.wtb_crane_position[2] - self.rope_length_load_side,
+                self.wtb_crane_position[2] - self.initial_rope_length_load_side,
             ],
             dtype=np.float64,
         )
+        self.prev_load_postion = copy.deepcopy(self.load_position)
 
         # DQN spaces
         if control_technique == "SAC":
@@ -233,6 +235,18 @@ class BuoyantBoat(gym.Env):
         self.winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
         self.prev_winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
 
+        self.load_position = np.array(
+            [
+                self.wtb_crane_position[0],
+                self.wtb_crane_position[1],
+                self.wtb_crane_position[2] - self.initial_rope_length_load_side,
+            ],
+            dtype=np.float64,
+        )
+        self.prev_load_postion = copy.deepcopy(self.load_position)
+
+        self.added_rope_winch = 0
+        
         self.state = np.array(
             [
                 self.position,  # boat position
@@ -393,6 +407,7 @@ class BuoyantBoat(gym.Env):
         _curr_length = np.sqrt(_sum_of_squares)
         if self.step_count == 0:  # initial condition
             _prev_length = _curr_length
+            self.initial_rope_length_boat_side = full_magnitude
         else:
             _prev_squared_differences = np.square(self.prev_winch_position - self.wtb_crane_position)
             _prev_sum_of_squares = np.sum(_prev_squared_differences)
@@ -402,11 +417,12 @@ class BuoyantBoat(gym.Env):
         print(f"rope_dy={self.rope_dy}")
 
         self.winch_velocity = self.winch_control(action)
+        self.added_rope_winch += self.winch_velocity * self.dt
 
         total_displacement_matrix = calculate_dh_rotation_matrice(
-            theta_1=np.pi/2 - angle,
+            _theta=np.pi/2 - angle,
             d1=-self.rope_dy,
-            d2=self.rope_dy + (self.winch_velocity * self.dt),
+            d2=self.rope_dy + self.added_rope_winch,
             initial_boat_rope_length=self.initial_rope_length_boat_side,
             intital_load_rope_length=self.initial_rope_length_load_side,
         )
@@ -414,14 +430,16 @@ class BuoyantBoat(gym.Env):
         # TODO: is the order of coordinates correct
         # self.load_position = np.dot(p_vec, total_displacement_matrix.T)
         position = total_displacement_matrix @ p_vec
-        self.load_position = np.array([position[0], position[1], position[2]])
+        self.load_position = np.array([position[2], position[1], position[0]])
         return self.load_position, self.winch_velocity
 
 
-    def reward_function(self):
+    def reward_function(self, preset=0):
         # scaling_factor = max(0, 1 - abs(self.rope_dy))  # Linear scaling
         # reward = scaling_factor * 2 - 1  # Scale between -1 and 1 reward
-        reward = -10*abs(self.rope_dy)
+        # reward = -10*abs(self.rope_dy)
+        load_velocity = (self.prev_load_postion[2] - self.load_position[2])/self.dt
+        reward = -10*abs(preset-load_velocity)
         # print(f"Reward={reward}")
         return reward
 
@@ -465,6 +483,7 @@ class BuoyantBoat(gym.Env):
         print(f"winch_dl={self.winch_velocity*self.dt}")
         # self.rope_load_cache.append(self.rope_length_load_side)
         self.prev_winch_position = copy.deepcopy(self.winch_position)
+        self.prev_load_postion = copy.deepcopy(self.load_position)
 
         # self.state[1] = self.rope_load
         self.state = [
@@ -496,8 +515,8 @@ class BuoyantBoat(gym.Env):
         info = {}
 
         return (
-            copy.deepcopy(self.obs),
-            # copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
+            # copy.deepcopy(self.obs),
+            copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
             reward,
             done,
             False,

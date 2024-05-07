@@ -2,23 +2,23 @@ import numpy as np
 
 
 def calculate_dh_rotation_matrice(
-    theta_1: np.float64,  # Joint 1 [rad]
+    _theta: np.float64,  # Joint 1 [rad]
     d1: np.float64,  # Displacement of link 2 [m]
     d2: np.float64,  # Displacement of link 9 [m]
     initial_boat_rope_length: np.float64,  # [m]
     intital_load_rope_length: np.float64,  # [m]
 ):
-    # Link lengths in centimeters
+    # Link lengths in meters
     a1 = initial_boat_rope_length  # Length of link 1
     a3 = 1  # Length of link 3
     a5 = intital_load_rope_length  # Length of link 5
 
-    # Initialize values for the joint angles (degrees)
+    # Initialize values for the joint angles (radians)
     theta_1 = 0  # Joint 1
-    theta_2 = theta_1  # Joint 2 wrt to vertical z axis
+    theta_2 = np.deg2rad(10)-_theta  # Joint 2 wrt to vertical z axis
     theta_3 = 0  # Joint 3
-    theta_4 = np.pi/2 - theta_1  # Joint 4
-    theta_5 = 0  # Joint 5
+    theta_4 = np.pi/2 + theta_2  # Joint 4
+    theta_5 = np.deg2rad(10)  # Joint 5
     theta_6 = 0  # Joint 6
 
     # Declare the Denavit-Hartenberg table.
