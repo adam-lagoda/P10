@@ -25,9 +25,10 @@ if __name__ == "__main__":
     state_angular_velocities = []
     state_load_positions = []
     _current_buyoancy_forces = []
+    state_load_velocities = []
     wave_data = []
 
-    for i in tqdm(range(1000)):
+    for i in tqdm(range(10000)):
         # Take a step in the environment
         state, _, _, _, _ = env.step([0.0])  # Assuming action 5 is used for all steps
 
@@ -37,7 +38,8 @@ if __name__ == "__main__":
         state_angular_velocities.append(state[3])
         state_load_positions.append(state[4])
         wave_data.append(state[5])
-        _current_buyoancy_forces.append(state[6])
+        state_load_velocities.append(state[6])
+        _current_buyoancy_forces.append(state[7])
 
     # Convert lists to numpy arrays for plotting
     np_positions = np.array(state_positions)
@@ -45,6 +47,7 @@ if __name__ == "__main__":
     np_angular_velocities = np.array(state_angular_velocities)
     np_load_position = np.array(state_load_positions)
     np_current_buyoancy_forces = np.array(_current_buyoancy_forces)
+    np_state_load_velocities = np.array(state_load_velocities)
     np_wave_data = np.array(wave_data)
 
     # Plot states over time

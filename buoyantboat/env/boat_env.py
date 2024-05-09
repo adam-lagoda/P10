@@ -8,7 +8,7 @@ import numpy as np
 from buoyantboat.env.dh_transform import calculate_dh_rotation_matrice
 from gymnasium import spaces
 from tqdm import tqdm
-
+import random
 
 class WaveGenerator:
     def __init__(
@@ -102,7 +102,12 @@ class WaveGenerator:
 
 
 class BuoyantBoat(gym.Env):
-    def __init__(self, kp=0.0, ki=0.0, kd=0.0, control_technique="DQN"):
+    def __init__(
+            self,
+            control_technique="DQN",
+            target_position=None,
+            target_velocity=None
+        ):
         self.gravity = 10  # [m/s^2]
         # self.max_buyoancy = 35  # [N]
         self.max_action = 5
@@ -177,14 +182,15 @@ class BuoyantBoat(gym.Env):
             dtype=np.float64,
         )
         self.prev_load_postion = copy.deepcopy(self.load_position)
+        self.load_velocity_z = 0
 
         # DQN spaces
         if control_technique == "SAC":
-            self.action_space = spaces.Box(low=-5, high=5, shape=(1,), dtype=np.float64)
+            self.action_space = spaces.Box(low=-5, high=5, shape=(1,), dtype=np.float64) # SAC - continuous action_space
         else:
-            self.action_space = spaces.Discrete(11)
+            self.action_space = spaces.Discrete(11)  # DQN - discrete action_space
 
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,))
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,))
         self.state = [
             self.position,  # boat position
             self.velocity,  # boat velocity
@@ -207,6 +213,9 @@ class BuoyantBoat(gym.Env):
 
         self.csv_path = "./csv"
         self.rope_load_cache = []
+
+        self.target_velocity = target_velocity
+        self.target_position = target_position
 
     def reset(self, **kwargs):
         self.step_count = 0
@@ -238,8 +247,10 @@ class BuoyantBoat(gym.Env):
             dtype=np.float64,
         )
         self.prev_load_postion = copy.deepcopy(self.load_position)
+        self.load_velocity_z = 0
 
         self.added_rope_winch = 0
+        self.rope_length = 75
         
         self.state = np.array(
             [
@@ -254,18 +265,19 @@ class BuoyantBoat(gym.Env):
         )
         self.prev_state = copy.deepcopy(self.state)
 
-        self.obs = np.array(
+        self.obs = np.array(  # TODO: change to self.observation_space
             [
-                self.position[2],  # boat position
-                # self.velocity[2],  # boat velocity
-                # self.orientation[0],  # boat orientation
-                # self.orientation[1],  # boat orientation
-                # self.angular_velocity,  # boat angular velocity
                 self.load_position[2],  # load position
-                # self.winch_velocity
+                self.load_velocity_z,
+                self.position[2],  # boat position
+                self.velocity[2]  # boat velocity
             ],
             dtype=np.float64,
         )
+        if self.target_position is None:
+            self.target_position = random.randint(10, 30)
+        if self.target_velocity is None:
+            self.target_velocity = 0
 
         print("Reset")
         info = {}
@@ -421,13 +433,25 @@ class BuoyantBoat(gym.Env):
         return self.load_position, self.winch_velocity
 
 
-    def reward_function(self, preset=0):
-        # scaling_factor = max(0, 1 - abs(self.rope_dy))  # Linear scaling
-        # reward = scaling_factor * 2 - 1  # Scale between -1 and 1 reward
-        # reward = -10*abs(self.rope_dy)
-        load_velocity = (self.prev_load_postion[2] - self.load_position[2])/self.dt
-        reward = -10*abs(preset-load_velocity)
-        print(f"Reward={reward}")
+    def reward_function(self, target_velocity, target_position):
+        # old
+        # reward = -10*abs(target_velocity-self.load_velocity_z)
+        # new
+        # reward_velocity = -abs(target_velocity-self.load_velocity_z) + 1
+        velocity_error = abs(self.load_velocity_z-target_velocity)
+        max_error_threshold = 1.0
+        if velocity_error <= max_error_threshold:
+            reward_velocity = 1 - (velocity_error/max_error_threshold)
+        else:
+            reward_velocity = -((velocity_error-max_error_threshold)/max_error_threshold)
+        # reward_velocity = -abs(target_velocity-self.load_velocity_z)+1
+        weight_velocity = 10.0
+        position_error = target_position-self.load_position[2]
+        reward_position = -abs(position_error)+1
+        weight_position = 10.0
+        reward = weight_position * reward_position + weight_velocity * reward_velocity
+
+        # print(f"Reward={reward}")
         return reward
 
     def step(self, action):
@@ -439,7 +463,7 @@ class BuoyantBoat(gym.Env):
         # Linear motion equations
         _current_buyoancy_forces = self.get_buoyancy()
         _total_external_forces = self.apply_external_force(_current_buyoancy_forces)
-        _drag_coefficient = 0.5
+        _drag_coefficient = 10000.5
         if _total_external_forces > 0.0:  # buoyant forces working <-> we are underwater <-> viscous friction is acting
             _viscous_friction = -_drag_coefficient * np.abs(self.velocity[2])  # TODO: revisit and verify
         else:
@@ -467,6 +491,7 @@ class BuoyantBoat(gym.Env):
         self.winch_position = np.dot(self.relative_coordinates, self.combined_rotation_matrix.T) + self.position
 
         self.load_position, self.winch_velocity = self.compute_dh_model(action)
+        self.load_velocity_z = (self.load_position[2]-self.prev_load_postion[2])/self.dt
         # print(f"winch_dl={self.winch_velocity*self.dt}")
         # self.rope_load_cache.append(self.rope_length_load_side)
         # self.prev_winch_position = copy.deepcopy(self.winch_position)
@@ -479,20 +504,26 @@ class BuoyantBoat(gym.Env):
             self.angular_velocity,  # boat angular velocity
             self.load_position,  # load position
             self.wave_state[0][0],  # wave heave in top left corner for debugging
+            self.velocity[2],  # boat velocity
             _current_buyoancy_forces,  # current buoyant forces
         ]
 
         self.obs = np.array(  # TODO: change to self.observation_space
             [
-                self.position[2],  # boat position
                 self.load_position[2],  # load position
+                self.load_velocity_z,
+                self.position[2],  # boat position
+                self.velocity[2]  # boat velocity
             ],
             dtype=np.float64,
         )
 
-        reward = self.reward_function()
+        reward = self.reward_function(
+            target_position=self.target_position,
+            target_velocity=self.target_velocity
+        )
         self.step_count = self.step_count + 1
-        if self.step_count > 400:
+        if self.step_count > 2500:
             done = True
             # self.write_to_csv(self.csv_path + "/rope_load.csv", self.rope_load_cache)
         else:
