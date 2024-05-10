@@ -6,99 +6,10 @@ from typing import Literal
 import gymnasium as gym
 import numpy as np
 from buoyantboat.env.dh_transform import calculate_dh_rotation_matrice
+from buoyantboat.env.wave_generator import WaveGenerator
 from gymnasium import spaces
 from tqdm import tqdm
 import random
-
-class WaveGenerator:
-    def __init__(
-        self,
-        coords,  # wrt to center of mass !!!
-        frequency_1=0.0062,  # 0.1Hz
-        frequency_2=0.0062,  # 0.1Hz
-        num_points=101,
-        timestep_delay=0.1,
-    ):
-        # Parameters
-        self.frequency_1 = frequency_1  # frequency of 1st sine wave [rad/s]
-        self.frequency_2 = frequency_2  # frequency of 2nd sine wave [rad/s]
-        self.num_points = num_points  # number of points in each direction
-        self.timestep_delay = timestep_delay  # delay in seconds for the second wave
-        self.coords = coords
-        # Grid of points
-        self.x = np.linspace(-10, 10, self.num_points)
-        self.y = np.linspace(-10, 10, self.num_points)
-        self.X, self.Y = np.meshgrid(self.x, self.y)
-
-        self._wave_plane = self.wave1(self.X, 0) + self.wave2(self.Y, 0, self.timestep_delay)
-        self.wave = None
-
-    def _bilin_intp(self, index: tuple, arr=None):
-        """Calculate a value based on non-int array index using bilinear interpolation."""
-        if arr is None:
-            arr = self._wave_plane
-        # Get the integer parts of the indices
-        x_floor = int(np.floor(index[0]))
-        x_ceil = int(np.ceil(index[0]))
-        y_floor = int(np.floor(index[1]))
-        y_ceil = int(np.ceil(index[1]))
-
-        # Ensure indices are within the array bounds
-        x_floor = max(x_floor, 0)
-        x_ceil = min(x_ceil, arr.shape[0] - 1)
-        y_floor = max(y_floor, 0)
-        y_ceil = min(y_ceil, arr.shape[1] - 1)
-
-        # If the indices are already integers, no interpolation is needed
-        if x_floor == x_ceil and y_floor == y_ceil:
-            return arr[x_floor, y_floor]
-
-        # Get the four surrounding points
-        top_left = arr[x_floor, y_floor]
-        top_right = arr[x_floor, y_ceil]
-        bottom_left = arr[x_ceil, y_floor]
-        bottom_right = arr[x_ceil, y_ceil]
-
-        # Calculate the interpolation weights
-        x_weight = index[0] - x_floor
-        y_weight = index[1] - y_floor
-
-        # Perform bilinear interpolation
-        top_interpolated = (top_right * x_weight) + (top_left * (1 - x_weight))
-        bottom_interpolated = (bottom_right * x_weight) + (bottom_left * (1 - x_weight))
-        interpolated_value = (bottom_interpolated * y_weight) + (top_interpolated * (1 - y_weight))
-
-        return interpolated_value
-
-    def wave1(self, X, time):
-        return 1 / 4 * np.sin(self.frequency_1 * (X + time * 2 * np.pi))
-
-    def wave2(self, Y, time, delay):
-        return 1 / 4 * np.sin(self.frequency_2 * (Y + (time - delay) * 2 * np.pi))
-
-    def coordinates_to_indices(self, coordinates: tuple):
-        index_x = int((coordinates[0] + self.x.min()) / np.round(self.x[1] - self.x[0], 1))
-        index_y = int((coordinates[1] + self.y.min()) / np.round(self.y[1] - self.y[0], 1))
-        return index_x, index_y
-
-    def update(self, dt):
-        self._wave_plane = self.wave1(self.X, dt) + self.wave2(self.Y, dt, self.timestep_delay)
-        # return self.wave  # 2D array containing wave height data
-        idx_wh11 = self.coordinates_to_indices((self.coords[0][0][0], self.coords[0][0][1]))
-        idx_wh12 = self.coordinates_to_indices((self.coords[0][1][0], self.coords[0][1][1]))
-        idx_wh21 = self.coordinates_to_indices((self.coords[1][0][0], self.coords[1][0][1]))
-        idx_wh22 = self.coordinates_to_indices((self.coords[1][1][0], self.coords[1][1][1]))
-
-        self.wave = np.array(
-            [
-                [self._wave_plane[idx_wh11], self._wave_plane[idx_wh12]],
-                [self._wave_plane[idx_wh21], self._wave_plane[idx_wh22]],
-            ]
-        )
-        #              |self.wave[-x,y]    self.wave[x,y] |
-        #  self.wave = |                                  |
-        #              |self.wave[-x,-y]   self.wave[x,-y]|
-        return self.wave
 
 
 class BuoyantBoat(gym.Env):
@@ -106,7 +17,8 @@ class BuoyantBoat(gym.Env):
             self,
             control_technique="DQN",
             target_position=None,
-            target_velocity=None
+            target_velocity=None,
+            max_step_per_episode=1000
         ):
         self.gravity = 10  # [m/s^2]
         # self.max_buyoancy = 35  # [N]
@@ -162,6 +74,7 @@ class BuoyantBoat(gym.Env):
 
         self.wave_state = self.wave_generator.update(0)
         self.step_count = 0
+        self.max_step_per_episode = max_step_per_episode
         self.winch_velocity = 0  # m/s
 
         # self.rope_length_boat_side = 50  # length of rope on boat side [Meters]
@@ -219,6 +132,12 @@ class BuoyantBoat(gym.Env):
 
     def reset(self, **kwargs):
         self.step_count = 0
+        self.wave_generator = WaveGenerator(
+            coords=self._force_applied_coords,
+            amplitude_1=random.uniform(0.15, 0.35),
+            amplitude_2=random.uniform(0.15, 0.35)
+            )
+
         self.wave_state = self.wave_generator.update(self.step_count)
 
         self.position = np.array([0, 0, -1], dtype=np.float64)  # [x, y, z] [m] Base Coordinate System
@@ -275,8 +194,9 @@ class BuoyantBoat(gym.Env):
             dtype=np.float64,
         )
         if self.target_position is None:
-            self.target_position = random.randint(10, 30)
+            self.target_position = random.randint(10, 20)
         if self.target_velocity is None:
+            self.target_velocity = random.uniform(-1.5, -0.2)
             self.target_velocity = 0
 
         print("Reset")
@@ -433,26 +353,72 @@ class BuoyantBoat(gym.Env):
         return self.load_position, self.winch_velocity
 
 
-    def reward_function(self, target_velocity, target_position):
-        # old
-        # reward = -10*abs(target_velocity-self.load_velocity_z)
-        # new
-        # reward_velocity = -abs(target_velocity-self.load_velocity_z) + 1
-        velocity_error = abs(self.load_velocity_z-target_velocity)
-        max_error_threshold = 1.0
-        if velocity_error <= max_error_threshold:
-            reward_velocity = 1 - (velocity_error/max_error_threshold)
-        else:
-            reward_velocity = -((velocity_error-max_error_threshold)/max_error_threshold)
-        # reward_velocity = -abs(target_velocity-self.load_velocity_z)+1
-        weight_velocity = 10.0
-        position_error = target_position-self.load_position[2]
-        reward_position = -abs(position_error)+1
-        weight_position = 10.0
-        reward = weight_position * reward_position + weight_velocity * reward_velocity
+    # def reward_function(self, target_velocity, target_position):
+    #     # old
+    #     # reward = -10*abs(target_velocity-self.load_velocity_z)
+    #     # new
+    #     # reward_velocity = -abs(target_velocity-self.load_velocity_z) + 1
+    #     done = False
+    #     velocity_error = abs(self.load_velocity_z-target_velocity)
+    #     max_error_threshold = 1.0
+    #     if velocity_error <= max_error_threshold:
+    #         reward_velocity = 1 - (velocity_error/max_error_threshold)
+    #     else:
+    #         reward_velocity = -((velocity_error-max_error_threshold)/max_error_threshold)
+    #     # reward_velocity = -abs(target_velocity-self.load_velocity_z)+1
+    #     weight_velocity = 10.0
 
-        # print(f"Reward={reward}")
-        return reward
+    #     position_error = target_position-self.load_position[2]
+    #     reward_position = -abs(position_error)+1
+    #     weight_position = 10.0
+    #     reward = weight_position * reward_position + weight_velocity * reward_velocity
+
+    #     # Sanity checks
+    #     # if self.step_count > self.max_step_per_episode:
+    #         # if abs(self.load_velocity_z) > 0.5+abs(target_velocity):
+    #         #     reward -= 20
+    #         #     done = True
+    #     if self.load_position[2] < target_position+1 and self.load_position[2] > target_position-1:
+    #             # if self.load_velocity_z > -0.1 and self.load_velocity_z < 0.1:
+    #         reward += 20
+    #             # done = True
+    #     # print(f"Reward={reward}")
+    #     return reward, done
+
+
+    def reward_function(self, target_velocity, target_position):
+        done = False
+
+        # # Velocity error component
+        # velocity_error = abs(target_velocity - self.load_velocity_z)
+        # max_velocity_error = 1.0  # Define a maximum tolerable velocity error
+        
+        # # Reward for velocity should be a negative quadratic function of error, 
+        # # which means the penalty increases as the error gets larger.
+        # reward_velocity = -velocity_error**2
+
+        # Position error component
+        position_error = abs(target_position - self.load_position[2])
+        reward_position = -position_error**2  # Use a negative quadratic function for position error as well
+        
+        # Weighting factors for velocity and position rewards
+        # weight_velocity = 1.0
+        # weight_position = 1.0
+
+        # Combine weighted rewards
+        # reward = (weight_position * reward_position) + (weight_velocity * reward_velocity)
+        reward = reward_position
+
+        # Check for termination
+        if self.step_count > 100:
+            # Check if the position is within a desirable threshold from the target
+            position_threshold = 0.5  # This defines a band around the target position that is considered acceptable
+            if abs(position_error) < position_threshold:
+                # Provide a bonus for maintaining position within the threshold
+                reward = reward + 20
+                # done = True
+        return reward, done
+
 
     def step(self, action):
         self.wave_state = self.wave_generator.update(self.step_count)
@@ -463,9 +429,10 @@ class BuoyantBoat(gym.Env):
         # Linear motion equations
         _current_buyoancy_forces = self.get_buoyancy()
         _total_external_forces = self.apply_external_force(_current_buyoancy_forces)
-        _drag_coefficient = 10000.5
+        # _drag_coefficient = 10000.5
+        _drag_coefficient = 0.5  # cube
         if _total_external_forces > 0.0:  # buoyant forces working <-> we are underwater <-> viscous friction is acting
-            _viscous_friction = -_drag_coefficient * np.abs(self.velocity[2])  # TODO: revisit and verify
+            _viscous_friction = -_drag_coefficient * self.width * self.length * self.density_water * np.square(self.velocity[2])/2  # TODO: revisit and verify
         else:
             _viscous_friction = 0.0
         sum_ext_forces = np.sum(_total_external_forces) + _viscous_friction
@@ -508,7 +475,7 @@ class BuoyantBoat(gym.Env):
             _current_buyoancy_forces,  # current buoyant forces
         ]
 
-        self.obs = np.array(  # TODO: change to self.observation_space
+        self.obs = np.array(  # same as self.observation_space
             [
                 self.load_position[2],  # load position
                 self.load_velocity_z,
@@ -517,17 +484,17 @@ class BuoyantBoat(gym.Env):
             ],
             dtype=np.float64,
         )
-
-        reward = self.reward_function(
+        reward, done = self.reward_function(
             target_position=self.target_position,
             target_velocity=self.target_velocity
         )
         self.step_count = self.step_count + 1
-        if self.step_count > 2500:
-            done = True
-            # self.write_to_csv(self.csv_path + "/rope_load.csv", self.rope_load_cache)
-        else:
-            done = False
+        if done is False:
+            if self.step_count > 2000:
+                done = True
+                # self.write_to_csv(self.csv_path + "/rope_load.csv", self.rope_load_cache)
+            else:
+                done = False
 
         self.prev_load_postion = copy.deepcopy(self.load_position)
         info = {}

@@ -22,11 +22,12 @@ env = Monitor(boat)
 model = SAC(
     MlpPolicy,
     env,
-    learning_rate=0.0003,
+    learning_rate=0.003,
     verbose=1,
     buffer_size=100000,
     batch_size=64,
-    learning_starts=1000,
+    learning_starts=10,
+    target_update_interval=5,
     tensorboard_log="./tb_logs/",
 )
 
