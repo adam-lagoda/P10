@@ -2,12 +2,13 @@ import os
 import sys
 from time import time
 import numpy as np
-from stable_baselines3 import SAC
+from stable_baselines3 import DDPG
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
-from stable_baselines3.sac import MlpPolicy
+from stable_baselines3.ddpg import MlpPolicy
 
 package_path = os.path.abspath(os.path.join(os.getcwd()))
 package_path = package_path[0].upper() + package_path[1:]
@@ -18,21 +19,29 @@ from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position
 boat = BuoyantBoat(control_technique="SAC")
 env = Monitor(boat)
 
+# Add some noise for exploration using NormalActionNoise
+n_actions = env.action_space.shape[0]
+action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
+
 # Initialize RL algorithm type and hyperparameters
-model = SAC(
+model = DDPG(
     MlpPolicy,
     env,
+    action_noise=action_noise,
     learning_rate=0.003,
-    verbose=1,
-    buffer_size=100000,
-    batch_size=64,
-    learning_starts=10,
-    target_update_interval=5,
+    buffer_size=50000,
+    learning_starts=100,
+    batch_size=100,
+    tau=0.005,
+    gamma=0.99,
+    train_freq=(1, "episode"),
+    gradient_steps=-1,  # Update policy after every episode
     tensorboard_log="./tb_logs/",
-    device="cuda"
+    device="cuda",
+    verbose=1
 )
 
-# Create an evaluation callback with the same env, called every 10000 iterations
+# Create an evaluation callback with the same env, called every 5000 iterations
 callbacks = []
 eval_callback = EvalCallback(
     env,
@@ -40,7 +49,7 @@ eval_callback = EvalCallback(
     n_eval_episodes=5,
     best_model_save_path=".",
     log_path=".",
-    eval_freq=10000,
+    eval_freq=5000,
 )
 callbacks.append(eval_callback)
 
@@ -48,7 +57,7 @@ kwargs = {}
 kwargs["callback"] = callbacks
 
 # Train for a certain number of timesteps
-model.learn(total_timesteps=200000, tb_log_name="boat_heave_sac", progress_bar=True, **kwargs)
+model.learn(total_timesteps=200000, tb_log_name="boat_heave_ddpg", progress_bar=True, **kwargs)
 
 # Save policy weights
-model.save("boat_heave_comp_SAC_policy")
+model.save("boat_heave_comp_DDPG_policy")

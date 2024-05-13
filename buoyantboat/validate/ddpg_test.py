@@ -7,19 +7,20 @@ package_path = package_path[0].upper() + package_path[1:]
 if package_path not in sys.path:
     sys.path.append(package_path)
 from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position; noqa: E402
-from stable_baselines3 import SAC
+from stable_baselines3 import DDPG
 
 
 # model_path = os.path.abspath("./good_models/sac_position_velocity_linear_reward_full_optimized_for_25/best_model.zip")
 # model_path = os.path.abspath("./best_model.zip")
-model_path = os.path.abspath(r"C:\Users\ADAM\OneDrive - Aalborg Universitet\P9\model\P10\boat_heave_comp_SAC_policy.zip")
+# model_path = os.path.abspath(r"C:\Users\ADAM\OneDrive - Aalborg Universitet\P9\model\P10\boat_heave_comp_SAC_policy.zip")
 # model_path = os.path.abspath("./boat_heave_comp_SAC_policy.zip")
-model = SAC.load(model_path)
+model_path = os.path.abspath("./boat_heave_comp_DDPG_policy.zip")
+model = DDPG.load(model_path)
 
 env = BuoyantBoat(
     control_technique="SAC",
     # target_velocity=0,
-    target_position=10,
+    target_position=20,
     max_step_per_episode=2000
 )
 

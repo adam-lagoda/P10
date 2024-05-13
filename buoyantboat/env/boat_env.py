@@ -99,11 +99,12 @@ class BuoyantBoat(gym.Env):
 
         # DQN spaces
         if control_technique == "SAC":
-            self.action_space = spaces.Box(low=-5, high=5, shape=(1,), dtype=np.float64) # SAC - continuous action_space
+            self.action_space = spaces.Box(low=-3, high=3, shape=(1,), dtype=np.float64) # SAC - continuous action_space
         else:
             self.action_space = spaces.Discrete(11)  # DQN - discrete action_space
 
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,))
+        self.observation_space = spaces.Box(low=-5, high=50, shape=(6,))
+        # self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,))
         self.state = [
             self.position,  # boat position
             self.velocity,  # boat velocity
@@ -129,8 +130,10 @@ class BuoyantBoat(gym.Env):
 
         self.target_velocity = target_velocity
         self.target_position = target_position
+        self.updated_already = False
 
     def reset(self, **kwargs):
+        super().reset()
         self.step_count = 0
         self.wave_generator = WaveGenerator(
             coords=self._force_applied_coords,
@@ -184,24 +187,29 @@ class BuoyantBoat(gym.Env):
         )
         self.prev_state = copy.deepcopy(self.state)
 
-        self.obs = np.array(  # TODO: change to self.observation_space
+        if self.target_position is None or self.updated_already is True:
+            self.target_position = random.randint(10, 25)
+        if self.target_velocity is None or self.updated_already is True:
+            # self.target_velocity = random.uniform(-1.5, -0.2)
+            self.target_velocity = 0
+        self.updated_already=True
+            # self.target_velocity = 0
+        print(f"This episode's targets: p={self.target_position}, v={self.target_velocity}.")
+
+        obs = np.array(  # same as self.observation_space
             [
                 self.load_position[2],  # load position
+                self.target_position,
                 self.load_velocity_z,
+                self.target_velocity,
                 self.position[2],  # boat position
                 self.velocity[2]  # boat velocity
             ],
             dtype=np.float64,
         )
-        if self.target_position is None:
-            self.target_position = random.randint(10, 20)
-        if self.target_velocity is None:
-            self.target_velocity = random.uniform(-1.5, -0.2)
-            self.target_velocity = 0
-
         print("Reset")
         info = {}
-        return self.obs, info
+        return obs, info
 
     def rotation_x(self, roll):  # Rotation matrix for roll
         return np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
@@ -389,25 +397,25 @@ class BuoyantBoat(gym.Env):
     def reward_function(self, target_velocity, target_position):
         done = False
 
-        # # Velocity error component
-        # velocity_error = abs(target_velocity - self.load_velocity_z)
-        # max_velocity_error = 1.0  # Define a maximum tolerable velocity error
+        # Velocity error component
+        velocity_error = abs(target_velocity - self.load_velocity_z)
+        max_velocity_error = 1.0  # Define a maximum tolerable velocity error
         
-        # # Reward for velocity should be a negative quadratic function of error, 
-        # # which means the penalty increases as the error gets larger.
-        # reward_velocity = -velocity_error**2
+        # Reward for velocity should be a negative quadratic function of error, 
+        # which means the penalty increases as the error gets larger.
+        reward_velocity = -velocity_error**2
 
         # Position error component
         position_error = abs(target_position - self.load_position[2])
         reward_position = -position_error**2  # Use a negative quadratic function for position error as well
         
         # Weighting factors for velocity and position rewards
-        # weight_velocity = 1.0
-        # weight_position = 1.0
+        weight_velocity = 1.0
+        weight_position = 1.0
 
         # Combine weighted rewards
-        # reward = (weight_position * reward_position) + (weight_velocity * reward_velocity)
-        reward = reward_position
+        reward = (weight_position * reward_position) + (weight_velocity * reward_velocity)
+        # reward = reward_position
 
         # Check for termination
         if self.step_count > 100:
@@ -419,8 +427,7 @@ class BuoyantBoat(gym.Env):
                 # done = True
         return reward, done
 
-
-    def step(self, action):
+    def _get_obs(self, action):
         self.wave_state = self.wave_generator.update(self.step_count)
 
         self.action = action
@@ -475,15 +482,24 @@ class BuoyantBoat(gym.Env):
             _current_buyoancy_forces,  # current buoyant forces
         ]
 
-        self.obs = np.array(  # same as self.observation_space
+        obs = np.array(  # same as self.observation_space
             [
                 self.load_position[2],  # load position
+                self.target_position,
                 self.load_velocity_z,
+                self.target_velocity,
                 self.position[2],  # boat position
                 self.velocity[2]  # boat velocity
             ],
             dtype=np.float64,
         )
+        
+        self.prev_load_postion = copy.deepcopy(self.load_position)
+        
+        return obs
+
+    def step(self, action):
+        obs = self._get_obs(action)
         reward, done = self.reward_function(
             target_position=self.target_position,
             target_velocity=self.target_velocity
@@ -496,11 +512,16 @@ class BuoyantBoat(gym.Env):
             else:
                 done = False
 
-        self.prev_load_postion = copy.deepcopy(self.load_position)
-        info = {}
-
+        info ={
+            "load_position": self.load_position[2],  # load position
+            "target_position": self.target_position,
+            "load_velocity": self.load_velocity_z,
+            "target_velocity": self.target_velocity,
+            # "position": self.position[2],  # boat position
+            # "velocity": self.velocity[2]  # boat velocity
+        }
         return (
-            copy.deepcopy(self.obs),
+            obs,
             # copy.deepcopy(self.state),  # COMMENT OUT FOR TRAINING
             reward,
             done,
