@@ -15,7 +15,10 @@ from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position
 
 if __name__ == "__main__":
 
-    env = BuoyantBoat(control_technique="SAC")
+    env = BuoyantBoat(
+        control_technique="SAC",
+        max_step_per_episode=10000
+    )
     # env.reset()
     # env.step(0)
     _ = env.reset()
@@ -30,7 +33,7 @@ if __name__ == "__main__":
 
     for i in tqdm(range(10000)):
         # Take a step in the environment
-        state, _, _, _, _ = env.step([0.0])  # Assuming action 5 is used for all steps
+        state, _, _, _, _ = env.step([0.1])  # Assuming action 5 is used for all steps
 
         # Temporary variable to hold current state values
         state_positions.append(state[0])

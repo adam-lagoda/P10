@@ -36,7 +36,7 @@ model = DDPG(
     gamma=0.99,
     train_freq=(1, "episode"),
     gradient_steps=-1,  # Update policy after every episode
-    tensorboard_log="./tb_logs/",
+    tensorboard_log="./tb_logs_ddpg/",
     device="cuda",
     verbose=1
 )

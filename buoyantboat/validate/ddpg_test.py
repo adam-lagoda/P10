@@ -14,12 +14,12 @@ from stable_baselines3 import DDPG
 # model_path = os.path.abspath("./best_model.zip")
 # model_path = os.path.abspath(r"C:\Users\ADAM\OneDrive - Aalborg Universitet\P9\model\P10\boat_heave_comp_SAC_policy.zip")
 # model_path = os.path.abspath("./boat_heave_comp_SAC_policy.zip")
-model_path = os.path.abspath("./boat_heave_comp_DDPG_policy.zip")
+model_path = os.path.abspath("./good_models/DDPG_ALL_STATES_vel_pos_rewards/best_model.zip")
 model = DDPG.load(model_path)
 
 env = BuoyantBoat(
     control_technique="SAC",
-    # target_velocity=0,
+    target_velocity=0,
     target_position=20,
     max_step_per_episode=2000
 )
@@ -33,9 +33,9 @@ preset_position = []
 done = False
 
 while not done:
-#     if env.step_count>500:
-#         env.target_position=10
-#         env.target_velocity=-1
+    if env.step_count>1000:
+        env.target_position=10
+        env.target_velocity=0
     action, _states = model.predict(obs, deterministic=True)
     # action = [0.0]
     obs, reward, done, truncated, info = env.step(action)
@@ -46,31 +46,36 @@ while not done:
     preset_velocity.append(env.target_velocity)
 
 state_log = np.array(state_log)
+boat_pos = state_log[:, 4]
+boat_vel = state_log[:, 5]
+load_pos = state_log[:, 0]
+load_vel = state_log[:, 2]
+
 
 fig, axs = plt.subplots(3, 2, figsize=(10, 10))
 
-axs[0,0].plot(state_log[:, 2], label="")
+axs[0,0].plot(boat_pos, label="")
 axs[0,0].set_title("State 3 (boat_pos) over Time")
 axs[0,0].set_xlabel("Time step")
 axs[0,0].set_ylabel("State 3 (boat_pos)  value")
 
-axs[0,1].plot(state_log[:, 0], label="Load position")
-axs[0,1].plot(state_log[:, 2], label="Boat position")
+axs[0,1].plot(load_pos, label="Load position")
+axs[0,1].plot(boat_pos, label="Boat position")
 axs[0,1].plot(preset_position, label="Target load position")
-axs[0,1].set_title("Positions over Time")
+axs[0,1].set_title("Positions over Time(DDPG)")
 axs[0,1].set_xlabel("Time step")
 axs[0,1].set_ylabel("State 1 (load_pos)  value")
 axs[0,1].legend()
 
-axs[1,1].plot(state_log[:, 1], label="Load velocity")
-axs[1,1].plot(state_log[:, 3], label="Boat velocity")
+axs[1,1].plot(load_vel, label="Load velocity")
+axs[1,1].plot(boat_vel, label="Boat velocity")
 axs[1,1].plot(preset_velocity, label="Target load velocity")
 axs[1,1].set_title("Velocities over Time")
 axs[1,1].set_xlabel("Time step")
 axs[1,1].set_ylabel("State 1 (load_pos)  value")
 axs[1,1].legend()
 
-axs[1,0].plot(state_log[:, 0])
+axs[1,0].plot(load_pos)
 axs[1,0].set_title("State 1 (load_pos) over Time")
 axs[1,0].set_xlabel("Time step")
 axs[1,0].set_ylabel("State 1 (load_pos)  value")

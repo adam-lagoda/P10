@@ -1,37 +1,39 @@
 import os
 import sys
-from time import time
-import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
-from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
-from stable_baselines3.ddpg import MlpPolicy
+from stable_baselines3.ppo import MlpPolicy
 
 package_path = os.path.abspath(os.path.join(os.getcwd()))
 package_path = package_path[0].upper() + package_path[1:]
 if package_path not in sys.path:
     sys.path.append(package_path)
+
 from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position; noqa: E402
 
 boat = BuoyantBoat(control_technique="SAC")
 env = Monitor(boat)
+env = DummyVecEnv([lambda: env])  # Wrap the environment in a DummyVecEnv
 
 # Initialize RL algorithm type and hyperparameters
 model = PPO(
     MlpPolicy,
     env,
+    learning_rate=0.003,
     verbose=1,
-    tensorboard_log="./tb_logs/",
+    batch_size=64,
+    tensorboard_log="./tb_logs_ppo/",
     device="cuda"
 )
 
 # Create an evaluation callback with the same env, called every 10000 iterations
 callbacks = []
+eval_env = Monitor(BuoyantBoat(control_technique="PPO"))
+eval_env = DummyVecEnv([lambda: eval_env])  # Wrap the evaluation environment in a DummyVecEnv
 eval_callback = EvalCallback(
-    env,
+    eval_env,
     callback_on_new_best=None,
     n_eval_episodes=5,
     best_model_save_path=".",

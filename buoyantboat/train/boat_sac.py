@@ -28,7 +28,7 @@ model = SAC(
     batch_size=64,
     learning_starts=10,
     target_update_interval=5,
-    tensorboard_log="./tb_logs/",
+    tensorboard_log="./tb_logs_sac/",
     device="cuda"
 )
 
@@ -48,7 +48,7 @@ kwargs = {}
 kwargs["callback"] = callbacks
 
 # Train for a certain number of timesteps
-model.learn(total_timesteps=200000, tb_log_name="boat_heave_sac", progress_bar=True, **kwargs)
+model.learn(total_timesteps=200000, tb_log_name="boat_heave_comp_SAC_policy_winch_model_1Mts", progress_bar=True, **kwargs)
 
 # Save policy weights
-model.save("boat_heave_comp_SAC_policy")
+model.save("boat_heave_comp_SAC_policy_winch_model_1Mts")

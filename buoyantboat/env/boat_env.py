@@ -7,6 +7,7 @@ import gymnasium as gym
 import numpy as np
 from buoyantboat.env.dh_transform import calculate_dh_rotation_matrice
 from buoyantboat.env.wave_generator import WaveGenerator
+from buoyantboat.env.winch import WinchModel
 from gymnasium import spaces
 from tqdm import tqdm
 import random
@@ -27,7 +28,9 @@ class BuoyantBoat(gym.Env):
         # self.crosssec_area = 3 * 8  # [m^2]
         # self.steady_sub_h = 1  # [m]
         self.density_water = 1000  # [kg/m^3]
-        self.mass_boat = 6000  # [kg]
+        self.mass_boat = 4000  # [kg]
+        # self.mass_boat = 10000  # [kg]
+        self.mass_load = 1000  # [kg]
         # self.mass_boat = 60000  # [kg]
         # self.density_wood = 600  # [kg/m^3]
         self._dimensions = (2.0, 5.0, 1.0)
@@ -40,7 +43,7 @@ class BuoyantBoat(gym.Env):
         self.Izz = (self.mass_boat / 12) * (self.length**2 + self.height**2)  # Moment of inertia about z-axis (kg m^2)
 
         # state variables TODO: verify the cooridinate systems (base vs local), convert if necesary
-        self.position = np.array([0, 0, -1], dtype=np.float64)  # [x, y, z] [m] Base Coordinate System
+        self.position = np.array([0, 0, -0.34], dtype=np.float64)  # [x, y, z] [m] Base Coordinate System
         self.prev_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
         self.velocity = np.array([0, 0, 0], dtype=np.float64)  # [vx, vy, vz] [m/s]
         self.prev_velocity = np.array([0, 0, 0], dtype=np.float64)  # [vx, vy, vz] [m/s]
@@ -75,6 +78,12 @@ class BuoyantBoat(gym.Env):
         self.wave_state = self.wave_generator.update(0)
         self.step_count = 0
         self.max_step_per_episode = max_step_per_episode
+        max_winch_speed = 3.0
+        self.winch = WinchModel(
+            max_control_input=max_winch_speed,
+            mass_load=self.mass_load
+        )
+        self.winch.reset()
         self.winch_velocity = 0  # m/s
 
         # self.rope_length_boat_side = 50  # length of rope on boat side [Meters]
@@ -99,7 +108,7 @@ class BuoyantBoat(gym.Env):
 
         # DQN spaces
         if control_technique == "SAC":
-            self.action_space = spaces.Box(low=-3, high=3, shape=(1,), dtype=np.float64) # SAC - continuous action_space
+            self.action_space = spaces.Box(low=-max_winch_speed, high=max_winch_speed, shape=(1,), dtype=np.float64) # SAC - continuous action_space
         else:
             self.action_space = spaces.Discrete(11)  # DQN - discrete action_space
 
@@ -143,7 +152,7 @@ class BuoyantBoat(gym.Env):
 
         self.wave_state = self.wave_generator.update(self.step_count)
 
-        self.position = np.array([0, 0, -1], dtype=np.float64)  # [x, y, z] [m] Base Coordinate System
+        self.position = np.array([0, 0, -0.34], dtype=np.float64)  # [x, y, z] [m] Base Coordinate System
         self.prev_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
 
         self.velocity = np.array([0, 0, 0], dtype=np.float64)  # [vx, vy, vz] [m/s]
@@ -158,13 +167,16 @@ class BuoyantBoat(gym.Env):
         )  # [roll_rate, pitch_rate, yaw_rate] [rad/s]
 
         self.winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
+        self.winch.reset()
+        self.winch_velocity = 0  # m/s
         # self.prev_winch_position = np.array([0, 0, 0], dtype=np.float64)  # [x, y, z] [m]
 
         self.load_position = np.array(
             [
                 self.wtb_crane_position[0],
                 self.wtb_crane_position[1],
-                self.wtb_crane_position[2] - 24,
+                # self.wtb_crane_position[2] - 24,
+                self.wtb_crane_position[2] - 5,
             ],
             dtype=np.float64,
         )
@@ -286,14 +298,19 @@ class BuoyantBoat(gym.Env):
         return np.array((torque_pitch, torque_roll))
 
     def winch_control(self, action):
-        self.winch_velocity = self.interpret_action(action)
+        winch_velocity = self.interpret_action(action)
 
-        return self.winch_velocity
+        return winch_velocity
 
     def interpret_action(self, action):
         # print(f"Chosen action = {action}")
         if self.control_technique == "SAC":
             self.winch_velocity = action[0]
+            # winch_velocity = self.winch.get_winch_rotational_velocity(
+            #     dt=self.dt,
+            #     num_steps=self.step_count,
+            #     up=action[0]
+            # )
             return self.winch_velocity
         else:
             if action == 0:
@@ -320,7 +337,7 @@ class BuoyantBoat(gym.Env):
                 self.winch_velocity = 5
             return self.winch_velocity
 
-
+        
     def compute_dh_model(self, action):
         # Calculate the vector between the winch and the crane
         vector_x = self.wtb_crane_position[0] - self.winch_position[0]
@@ -437,9 +454,10 @@ class BuoyantBoat(gym.Env):
         _current_buyoancy_forces = self.get_buoyancy()
         _total_external_forces = self.apply_external_force(_current_buyoancy_forces)
         # _drag_coefficient = 10000.5
-        _drag_coefficient = 0.5  # cube
+        # _drag_coefficient = 0.5  # cube
+        _drag_coefficient = 2.0  # cube
         if _total_external_forces > 0.0:  # buoyant forces working <-> we are underwater <-> viscous friction is acting
-            _viscous_friction = -_drag_coefficient * self.width * self.length * self.density_water * np.square(self.velocity[2])/2  # TODO: revisit and verify
+            _viscous_friction = -_drag_coefficient * self.width * self.length * self.density_water * np.square(self.velocity[2])/2  # TODO: link to paper
         else:
             _viscous_friction = 0.0
         sum_ext_forces = np.sum(_total_external_forces) + _viscous_friction
@@ -506,7 +524,7 @@ class BuoyantBoat(gym.Env):
         )
         self.step_count = self.step_count + 1
         if done is False:
-            if self.step_count > 2000:
+            if self.step_count > self.max_step_per_episode:
                 done = True
                 # self.write_to_csv(self.csv_path + "/rope_load.csv", self.rope_load_cache)
             else:
@@ -517,6 +535,7 @@ class BuoyantBoat(gym.Env):
             "target_position": self.target_position,
             "load_velocity": self.load_velocity_z,
             "target_velocity": self.target_velocity,
+            "winch_velocity": self.winch_velocity,
             # "position": self.position[2],  # boat position
             # "velocity": self.velocity[2]  # boat velocity
         }
