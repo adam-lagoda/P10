@@ -5,6 +5,7 @@ import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
 package_path = os.path.abspath(os.path.join(os.getcwd()))
@@ -17,7 +18,10 @@ if __name__ == "__main__":
 
     env = BuoyantBoat(
         control_technique="SAC",
-        max_step_per_episode=10000
+        max_step_per_episode=10000,
+        # learning_starts=8000,
+        learning_starts=1,
+        validation=True
     )
     # env.reset()
     # env.step(0)
@@ -33,8 +37,9 @@ if __name__ == "__main__":
 
     for i in tqdm(range(10000)):
         # Take a step in the environment
-        state, _, _, _, _ = env.step([0.1])  # Assuming action 5 is used for all steps
-
+        state, _, done, _, _ = env.step([0.00])  # Assuming action 5 is used for all steps
+        if done:
+            break
         # Temporary variable to hold current state values
         state_positions.append(state[0])
         state_orientations.append(state[2])
@@ -92,5 +97,32 @@ if __name__ == "__main__":
     plt.title(f"buoyant forces,  1ts = {env.dt}s")
     plt.legend()
 
+    # Create a DataFrame from the state data
+    data = {
+        "Position_X": np_positions[:, 0],
+        "Position_Y": np_positions[:, 1],
+        "Position_Z": np_positions[:, 2],
+        "Orientation_Roll": np_orientations[:, 0],
+        "Orientation_Pitch": np_orientations[:, 1],
+        "Orientation_Yaw": np_orientations[:, 2],
+        "Angular_Velocity_Roll": np_angular_velocities[:, 0],
+        "Angular_Velocity_Pitch": np_angular_velocities[:, 1],
+        "Angular_Velocity_Yaw": np_angular_velocities[:, 2],
+        "Load_Position_X": np_load_position[:, 0],
+        "Load_Position_Y": np_load_position[:, 1],
+        "Load_Position_Z": np_load_position[:, 2],
+        "Wave_Height": np_wave_data,
+        "Load_Velocity_Z": np_state_load_velocities,
+        "Buoyant_Force_1_X": np_current_buyoancy_forces[:, 0, 0],
+        "Buoyant_Force_1_Y": np_current_buyoancy_forces[:, 0, 1],
+        "Buoyant_Force_2_X": np_current_buyoancy_forces[:, 1, 0],
+        "Buoyant_Force_2_Y": np_current_buyoancy_forces[:, 1, 1],
+    }
+    df = pd.DataFrame(data)
+
+    # Save the DataFrame to a CSV file
+    df.to_csv("states_no_control_no_wait.csv", index=False)
+    
     plt.tight_layout()
     plt.show()
+

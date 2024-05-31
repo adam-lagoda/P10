@@ -15,7 +15,6 @@ from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position
 
 boat = BuoyantBoat(control_technique="SAC")
 env = Monitor(boat)
-env = DummyVecEnv([lambda: env])  # Wrap the environment in a DummyVecEnv
 
 # Initialize RL algorithm type and hyperparameters
 model = PPO(
@@ -30,10 +29,8 @@ model = PPO(
 
 # Create an evaluation callback with the same env, called every 10000 iterations
 callbacks = []
-eval_env = Monitor(BuoyantBoat(control_technique="PPO"))
-eval_env = DummyVecEnv([lambda: eval_env])  # Wrap the evaluation environment in a DummyVecEnv
 eval_callback = EvalCallback(
-    eval_env,
+    env,
     callback_on_new_best=None,
     n_eval_episodes=5,
     best_model_save_path=".",
@@ -41,6 +38,7 @@ eval_callback = EvalCallback(
     eval_freq=10000,
 )
 callbacks.append(eval_callback)
+
 kwargs = {}
 kwargs["callback"] = callbacks
 
@@ -53,4 +51,4 @@ model.learn(
 )
 
 # Save policy weights
-model.save("boat_heave_comp_PPO_policy")
+model.save("boat_heave_comp_PPO_policy_new")

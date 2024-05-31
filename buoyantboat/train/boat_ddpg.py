@@ -19,21 +19,19 @@ from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position
 boat = BuoyantBoat(control_technique="SAC")
 env = Monitor(boat)
 
-# Add some noise for exploration using NormalActionNoise
-n_actions = env.action_space.shape[0]
-action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
+# # Add some noise for exploration using NormalActionNoise
+# n_actions = env.action_space.shape[0]
+# action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
 
 # Initialize RL algorithm type and hyperparameters
 model = DDPG(
     MlpPolicy,
     env,
-    action_noise=action_noise,
-    learning_rate=0.003,
-    buffer_size=50000,
-    learning_starts=100,
+    # action_noise=action_noise,
+    learning_rate=0.3,
+    buffer_size=100000,
+    learning_starts=10,
     batch_size=100,
-    tau=0.005,
-    gamma=0.99,
     train_freq=(1, "episode"),
     gradient_steps=-1,  # Update policy after every episode
     tensorboard_log="./tb_logs_ddpg/",
@@ -57,7 +55,7 @@ kwargs = {}
 kwargs["callback"] = callbacks
 
 # Train for a certain number of timesteps
-model.learn(total_timesteps=200000, tb_log_name="boat_heave_ddpg", progress_bar=True, **kwargs)
+model.learn(total_timesteps=200000, tb_log_name="boat_heave_ddpg_new", progress_bar=True, **kwargs)
 
 # Save policy weights
-model.save("boat_heave_comp_DDPG_policy")
+model.save("boat_heave_comp_DDPG_new")

@@ -48,7 +48,7 @@ kwargs = {}
 kwargs["callback"] = callbacks
 
 # Train for a certain number of timesteps
-model.learn(total_timesteps=200000, tb_log_name="boat_heave_comp_SAC_policy_winch_model_1Mts", progress_bar=True, **kwargs)
+model.learn(total_timesteps=200000, tb_log_name="boat_heave_comp_SAC_policy_winch_model_dc_no_termination", progress_bar=True, **kwargs)
 
 # Save policy weights
-model.save("boat_heave_comp_SAC_policy_winch_model_1Mts")
+model.save("boat_heave_comp_SAC_policy_winch_model_dc_no_termination")

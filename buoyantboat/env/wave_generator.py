@@ -71,7 +71,7 @@ class WaveGenerator:
     def wave2(self, Y, time, delay):
         return self.amplitude_2 * np.sin(self.frequency_2 * (Y + (time - delay) * 2 * np.pi))
 
-    def coordinates_to_indices(self, coordinates: tuple):
+    def coordinates_to_indices(self, coordinates: tuple) -> tuple:
         index_x = int((coordinates[0] + self.x.min()) / np.round(self.x[1] - self.x[0], 1))
         index_y = int((coordinates[1] + self.y.min()) / np.round(self.y[1] - self.y[0], 1))
         return index_x, index_y

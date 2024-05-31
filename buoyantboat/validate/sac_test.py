@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import os 
 import sys
 package_path = os.path.abspath(os.path.join(os.getcwd()))
@@ -15,15 +16,16 @@ from stable_baselines3 import SAC
 # model_path = os.path.abspath("./good_models/SAC_ALL_STATES_vel_pos_reward/best_model.zip")
 # model_path = os.path.abspath("./good_models/working_no_winch/SAC_BEST_SO_FAR/best_model.zip")
 # model_path = os.path.abspath("./best_model.zip")
-# model_path = os.path.abspath("./boat_heave_comp_SAC_policy_winch_model_1Mts.zip")
+# model_path = os.path.abspath("./boat_heave_comp_SAC_policy_winch_model_dc_no_termination.zip")
 model_path = os.path.abspath("./good_models/working_no_winch/SAC_BEST_SO_FAR/best_model.zip")
 model = SAC.load(model_path)
 
 env = BuoyantBoat(
     control_technique="SAC",
-    target_velocity=0.0,
+    # target_velocity=0.0,
     target_position=25,
-    max_step_per_episode=4000
+    max_step_per_episode=10000,
+    validation=True
 )
 
 obs, info = env.reset()
@@ -36,16 +38,17 @@ winch_velocity = []
 done = False
 
 while not done:
-
+    # print(f"Observation tensor: {obs}")
+    # print(f"Has NaN values: {np.isnan(obs).any()}")
     # env.target_position = env.target_position + env.target_velocity*env.dt
     action, _states = model.predict(obs, deterministic=True)
-    if env.step_count > 2000:
-        env.target_velocity = -0.5
-        env.target_position = env.target_position + env.target_velocity*env.dt
-
+    # if env.step_count > 2000:
+    #     env.target_velocity = -0.5
+    #     env.target_position = env.target_position + env.target_velocity*env.dt
+    # action = [0.0]
     obs, reward, done, truncated, info = env.step(action)
-    if env.load_position[2] < 5.0:
-        done = True
+    # if env.load_position[2] < 5.0:
+    #     done = True
 
 
     # if env.step_count>1000:
@@ -107,6 +110,20 @@ axs[2,1].set_title("Rewards over Time")
 axs[2,1].set_xlabel("Time step")
 axs[2,1].set_ylabel("Reward")
 
+# Create a DataFrame from the state data
+data = {
+    "Boat_Position_Z": boat_pos,
+    "Boat_Velocity_Z": boat_vel,
+    "Load_Position_Z": load_pos,
+    "Load_Velocity_Z": load_vel,
+    "Target_Load_Position_Z": preset_position,
+    "Target_Load_Velocity_Z": preset_velocity,
+    "Action": action_log,
+    "Winch_Velocity": winch_velocity,
+    "Reward": reward_log,
+}
+df = pd.DataFrame(data)
+# df.to_csv("states_sac_no_winch.csv", index=False)
 plt.legend()
 plt.tight_layout()
 plt.show()

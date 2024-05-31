@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import os 
 import sys
 package_path = os.path.abspath(os.path.join(os.getcwd()))
@@ -12,15 +13,16 @@ from stable_baselines3 import PPO
 
 # model_path = os.path.abspath("./good_models/sac_position_velocity_linear_reward_full_optimized_for_25/best_model.zip")
 # model_path = os.path.abspath(r"C:\Users\ADAM\OneDrive - Aalborg Universitet\P9\model\P10\boat_heave_comp_SAC_policy.zip")
-# model_path = os.path.abspath("./best_model.zip")
-model_path = os.path.abspath("./good_models/PPO_ALL_STATES_vel_pos_rewards/best_model.zip")
+# model_path = os.path.abspath("./boat_heave_comp_PPO_policy_new.zip")
+model_path = os.path.abspath("./good_models/working_no_winch/PPO_ALL_STATES_vel_pos_rewards/best_model.zip")
 model = PPO.load(model_path)
 
 env = BuoyantBoat(
     control_technique="SAC",
-    target_velocity=0,
-    target_position=16,
-    max_step_per_episode=5000
+    # target_velocity=0.0,
+    target_position=25,
+    max_step_per_episode=10000,
+    validation=True
 )
 
 obs, info = env.reset()
@@ -29,20 +31,34 @@ reward_log = []
 action_log = []
 preset_velocity = []
 preset_position = []
+winch_velocity = []
 done = False
 
 while not done:
-    if env.step_count > 1000:
-        env.target_position = 10
-        env.target_velocity = 0
+    # print(f"Observation tensor: {obs}")
+    # print(f"Has NaN values: {np.isnan(obs).any()}")
+    # env.target_position = env.target_position + env.target_velocity*env.dt
     action, _states = model.predict(obs, deterministic=True)
+    # if env.step_count > 2000:
+    #     env.target_velocity = -0.5
+    #     env.target_position = env.target_position + env.target_velocity*env.dt
     # action = [0.0]
     obs, reward, done, truncated, info = env.step(action)
+    # if env.load_position[2] < 5.0:
+    #     done = True
+
+
+    # if env.step_count>1000:
+    #     env.target_position=10
+    #     env.target_velocity=0
+    # action = [0.0]
+    
     action_log.append(action[0])
     state_log.append(obs)
     reward_log.append(reward)
     preset_position.append(env.target_position)
     preset_velocity.append(env.target_velocity)
+    winch_velocity.append(info["winch_velocity"])
 
 state_log = np.array(state_log)
 boat_pos = state_log[:, 4]
@@ -79,16 +95,32 @@ axs[1,0].set_title("State 1 (load_pos) over Time")
 axs[1,0].set_xlabel("Time step")
 axs[1,0].set_ylabel("State 1 (load_pos)  value")
 
-axs[2,0].plot(action_log)
+axs[2,0].plot(action_log, label="Action")
+axs[2,0].plot(winch_velocity, label="Winch Velocity")
 axs[2,0].set_title("Action over Time")
 axs[2,0].set_xlabel("Time step")
 axs[2,0].set_ylabel("Action  value")
+axs[2,0].legend()
 
 axs[2,1].plot(reward_log)
 axs[2,1].set_title("Rewards over Time")
 axs[2,1].set_xlabel("Time step")
 axs[2,1].set_ylabel("Reward")
 
+# Create a DataFrame from the state data
+data = {
+    "Boat_Position_Z": boat_pos,
+    "Boat_Velocity_Z": boat_vel,
+    "Load_Position_Z": load_pos,
+    "Load_Velocity_Z": load_vel,
+    "Target_Load_Position_Z": preset_position,
+    "Target_Load_Velocity_Z": preset_velocity,
+    "Action": action_log,
+    "Winch_Velocity": winch_velocity,
+    "Reward": reward_log,
+}
+df = pd.DataFrame(data)
+df.to_csv("states_ppo_no_winch.csv", index=False)
 plt.legend()
 plt.tight_layout()
 plt.show()

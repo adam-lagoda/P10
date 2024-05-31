@@ -8,6 +8,7 @@ import numpy as np
 from buoyantboat.env.dh_transform import calculate_dh_rotation_matrice
 from buoyantboat.env.wave_generator import WaveGenerator
 from buoyantboat.env.winch import WinchModel
+from buoyantboat.env.winch_dc import WinchModelDC
 from gymnasium import spaces
 from tqdm import tqdm
 import random
@@ -19,9 +20,13 @@ class BuoyantBoat(gym.Env):
             control_technique="DQN",
             target_position=None,
             target_velocity=None,
-            max_step_per_episode=1000
+            max_step_per_episode=1000,
+            validation=False,
+            learning_starts=8000
         ):
         self.gravity = 10  # [m/s^2]
+        self.validation = validation
+        self.learning_starts = learning_starts
         # self.max_buyoancy = 35  # [N]
         self.max_action = 5
         self.dt = 0.05  # timestep [s]
@@ -79,10 +84,13 @@ class BuoyantBoat(gym.Env):
         self.step_count = 0
         self.max_step_per_episode = max_step_per_episode
         max_winch_speed = 3.0
-        self.winch = WinchModel(
-            max_control_input=max_winch_speed,
-            mass_load=self.mass_load
+        self.winch = WinchModelDC(
+            max_control_input=max_winch_speed
         )
+        # self.winch = WinchModel(
+        #     max_control_input=max_winch_speed,
+        #     mass_load=self.mass_load
+        # )
         self.winch.reset()
         self.winch_velocity = 0  # m/s
 
@@ -99,7 +107,7 @@ class BuoyantBoat(gym.Env):
             [
                 self.wtb_crane_position[0],
                 self.wtb_crane_position[1],
-                self.wtb_crane_position[2] - 24,
+                self.wtb_crane_position[2] - 5,
             ],
             dtype=np.float64,
         )
@@ -110,7 +118,7 @@ class BuoyantBoat(gym.Env):
         if control_technique == "SAC":
             self.action_space = spaces.Box(low=-max_winch_speed, high=max_winch_speed, shape=(1,), dtype=np.float64) # SAC - continuous action_space
         else:
-            self.action_space = spaces.Discrete(11)  # DQN - discrete action_space
+            self.action_space = spaces.Discrete(13)  # DQN - discrete action_space
 
         self.observation_space = spaces.Box(low=-5, high=50, shape=(6,))
         # self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,))
@@ -176,7 +184,7 @@ class BuoyantBoat(gym.Env):
                 self.wtb_crane_position[0],
                 self.wtb_crane_position[1],
                 # self.wtb_crane_position[2] - 24,
-                self.wtb_crane_position[2] - 5,
+                self.wtb_crane_position[2]/2,
             ],
             dtype=np.float64,
         )
@@ -198,28 +206,42 @@ class BuoyantBoat(gym.Env):
             dtype=np.float64,
         )
         self.prev_state = copy.deepcopy(self.state)
-
         if self.target_position is None or self.updated_already is True:
-            self.target_position = random.randint(10, 25)
+            self.target_position = random.randint(10, 45)
         if self.target_velocity is None or self.updated_already is True:
-            # self.target_velocity = random.uniform(-1.5, -0.2)
             self.target_velocity = 0
+        self.initial_target_position = copy.deepcopy(self.target_position)
         self.updated_already=True
+        # if self.target_position is None or self.updated_already is True:
+        #     self.target_position = random.randint(10, 25)
+        # if self.target_velocity is None or self.updated_already is True:
+        #     self.target_velocity = 0
+        # self.updated_already=True
+        
             # self.target_velocity = 0
         print(f"This episode's targets: p={self.target_position}, v={self.target_velocity}.")
 
-        obs = np.array(  # same as self.observation_space
-            [
-                self.load_position[2],  # load position
-                self.target_position,
-                self.load_velocity_z,
-                self.target_velocity,
-                self.position[2],  # boat position
-                self.velocity[2]  # boat velocity
-            ],
-            dtype=np.float64,
+        obs = copy.deepcopy(
+            np.array(  # same as self.observation_space
+                [
+                    self.load_position[2],  # load position
+                    self.target_position,
+                    self.load_velocity_z,
+                    self.target_velocity,
+                    self.position[2],  # boat position
+                    self.velocity[2]  # boat velocity
+                ],
+                dtype=np.float64,
+            )
         )
-        print("Reset")
+        print(f"Reset. Running {self.learning_starts} timesteps to get rid of noise")
+        if self.validation and self.learning_starts != 0:
+            for _ in tqdm(range(self.learning_starts)):
+                if self.control_technique == "SAC":
+                    _, _, _, _, _ = self.step([0.0])
+                else:
+                    _, _, _, _, _ = self.step(6)
+
         info = {}
         return obs, info
 
@@ -245,7 +267,7 @@ class BuoyantBoat(gym.Env):
             np.dot(self._force_applied_coords, self.combined_rotation_matrix.T) + self.position
         )
         # print(force_applied_points_global)
-        force_applied_y = force_applied_points_global[:, :, 2:]
+        # force_applied_y = force_applied_points_global[:, :, 2:]
         self.buoyant_forces = np.zeros((2, 2))
         # Get max force so it doesn't go berserk on us later
         _max_force = self.density_water * self.gravity * self.width * self.height * self.length / 4
@@ -254,20 +276,14 @@ class BuoyantBoat(gym.Env):
             for j in range(2):
                 # local height = wave height - (current y position of force application - distance of force application to bottom deck)
                 _hull_to_surface_distance = self.wave_state[i][j] - (
-                    force_applied_y[i][j][0] - self._force_applied_coords[i][j][2]
+                    force_applied_points_global[i][j][2] - self._force_applied_coords[i][j][2]
                 )
                 _hull_area = self.width * self.length
                 _local_buoyant_force = self.density_water * self.gravity * _hull_area / 4 * _hull_to_surface_distance
 
-                if _local_buoyant_force > 0:
-                    # print("we are underwater")
-                    pass
                 # cap forces between 0 and max, obviously
                 self.buoyant_forces[i][j] = np.maximum(np.minimum(_local_buoyant_force, _max_force), 0)
         # print(self.buoyant_forces)
-        if self.step_count == 6:
-            # print("breakpoint")
-            pass
         return self.buoyant_forces
 
     def apply_external_force(self, force):
@@ -276,9 +292,6 @@ class BuoyantBoat(gym.Env):
 
     def calculate_torques(self):
         # torques = np.cross(self._force_applied_coords - self.position, self.forces)
-        if self.step_count == 7:
-            # print("breakpoint")
-            pass
         torques = np.zeros((2, 2))
         plane_normal_local = np.dot(
             self.combined_rotation_matrix, np.array([0, 0, 1])
@@ -306,36 +319,81 @@ class BuoyantBoat(gym.Env):
         # print(f"Chosen action = {action}")
         if self.control_technique == "SAC":
             self.winch_velocity = action[0]
-            # winch_velocity = self.winch.get_winch_rotational_velocity(
+            
+            # self.winch_velocity = self.winch.get_winch_rotational_velocity(
             #     dt=self.dt,
-            #     num_steps=self.step_count,
+            #     # num_steps=self.step_count,
             #     up=action[0]
+            # )
+            
+            # self.winch_velocity = self.winch.step(
+            #     # up=action[0],
+            #     up=action,
+            #     dt=self.dt
+            #     # num_steps=self.step_count,
             # )
             return self.winch_velocity
         else:
             if action == 0:
-                self.winch_velocity = -5
+                winch_velocity = -1.5
             elif action == 1:
-                self.winch_velocity = -4
+                winch_velocity = -1.25
             elif action == 2:
-                self.winch_velocity = -3
+                winch_velocity = -1.0
             elif action == 3:
-                self.winch_velocity = -2
+                winch_velocity = -0.75
             elif action == 4:
-                self.winch_velocity = -1
+                winch_velocity = -0.5
             elif action == 5:
-                self.winch_velocity = 0
+                winch_velocity = -0.25
             elif action == 6:
-                self.winch_velocity = 1
+                winch_velocity = 0.0
             elif action == 7:
-                self.winch_velocity = 2
+                winch_velocity = 0.25
             elif action == 8:
-                self.winch_velocity = 3
+                winch_velocity = 0.5
             elif action == 9:
-                self.winch_velocity = 4
-            else:  # action == 10
-                self.winch_velocity = 5
-            return self.winch_velocity
+                winch_velocity = 0.75
+            elif action == 10:
+                winch_velocity = 1.0
+            elif action == 11:
+                winch_velocity = 1.25
+            else:  # action == 12
+                winch_velocity = 1.5
+            # self.winch_velocity = self.winch.step(
+            #     # up=action[0],
+            #     up=winch_velocity,
+            #     dt=self.dt
+            #     # num_steps=self.step_count,
+            # )
+            return winch_velocity
+            # if action == 0:
+            #     self.winch_velocity = -1.5
+            # elif action == 1:
+            #     self.winch_velocity = -1.25
+            # elif action == 2:
+            #     self.winch_velocity = -1.0
+            # elif action == 3:
+            #     self.winch_velocity = -0.75
+            # elif action == 4:
+            #     self.winch_velocity = -0.5
+            # elif action == 5:
+            #     self.winch_velocity = -0.25
+            # elif action == 6:
+            #     self.winch_velocity = 0.0
+            # elif action == 7:
+            #     self.winch_velocity = 0.25
+            # elif action == 8:
+            #     self.winch_velocity = 0.5
+            # elif action == 9:
+            #     self.winch_velocity = 0.75
+            # elif action == 10:
+            #     self.winch_velocity = 1.0
+            # elif action == 11:
+            #     self.winch_velocity = 1.25
+            # else:  # action == 12
+            #     self.winch_velocity = 1.5
+            # return self.winch_velocity
 
         
     def compute_dh_model(self, action):
@@ -378,39 +436,6 @@ class BuoyantBoat(gym.Env):
         return self.load_position, self.winch_velocity
 
 
-    # def reward_function(self, target_velocity, target_position):
-    #     # old
-    #     # reward = -10*abs(target_velocity-self.load_velocity_z)
-    #     # new
-    #     # reward_velocity = -abs(target_velocity-self.load_velocity_z) + 1
-    #     done = False
-    #     velocity_error = abs(self.load_velocity_z-target_velocity)
-    #     max_error_threshold = 1.0
-    #     if velocity_error <= max_error_threshold:
-    #         reward_velocity = 1 - (velocity_error/max_error_threshold)
-    #     else:
-    #         reward_velocity = -((velocity_error-max_error_threshold)/max_error_threshold)
-    #     # reward_velocity = -abs(target_velocity-self.load_velocity_z)+1
-    #     weight_velocity = 10.0
-
-    #     position_error = target_position-self.load_position[2]
-    #     reward_position = -abs(position_error)+1
-    #     weight_position = 10.0
-    #     reward = weight_position * reward_position + weight_velocity * reward_velocity
-
-    #     # Sanity checks
-    #     # if self.step_count > self.max_step_per_episode:
-    #         # if abs(self.load_velocity_z) > 0.5+abs(target_velocity):
-    #         #     reward -= 20
-    #         #     done = True
-    #     if self.load_position[2] < target_position+1 and self.load_position[2] > target_position-1:
-    #             # if self.load_velocity_z > -0.1 and self.load_velocity_z < 0.1:
-    #         reward += 20
-    #             # done = True
-    #     # print(f"Reward={reward}")
-    #     return reward, done
-
-
     def reward_function(self, target_velocity, target_position):
         done = False
 
@@ -442,9 +467,14 @@ class BuoyantBoat(gym.Env):
                 # Provide a bonus for maintaining position within the threshold
                 reward = reward + 20
                 # done = True
+        if self.load_position[2] < 3.0 or self.load_position[2] > self.wtb_crane_position[2]:
+        #     # print("Done because load is below 3m.")
+            done = True
+        
         return reward, done
 
     def _get_obs(self, action):
+
         self.wave_state = self.wave_generator.update(self.step_count)
 
         self.action = action
@@ -455,7 +485,7 @@ class BuoyantBoat(gym.Env):
         _total_external_forces = self.apply_external_force(_current_buyoancy_forces)
         # _drag_coefficient = 10000.5
         # _drag_coefficient = 0.5  # cube
-        _drag_coefficient = 2.0  # cube
+        _drag_coefficient = 1.0  # cube
         if _total_external_forces > 0.0:  # buoyant forces working <-> we are underwater <-> viscous friction is acting
             _viscous_friction = -_drag_coefficient * self.width * self.length * self.density_water * np.square(self.velocity[2])/2  # TODO: link to paper
         else:
@@ -515,13 +545,69 @@ class BuoyantBoat(gym.Env):
         self.prev_load_postion = copy.deepcopy(self.load_position)
         
         return obs
+    
+    def _get_obs_ext(self, action, ext_pos):
+        self.action = action
+        
+        if self.step_count == 0:
+            self.velocity[2]
+        else:
+            self.velocity[2] = (ext_pos[self.step_count] - ext_pos[self.step_count-1])/self.dt
+        self.winch_position = np.array([0,0,ext_pos[self.step_count]], np.float64)
 
-    def step(self, action):
-        obs = self._get_obs(action)
+        self.load_position, self.winch_velocity = self.compute_dh_model(action)
+        self.load_velocity_z = (self.load_position[2]-self.prev_load_postion[2])/self.dt
+        # print(f"winch_dl={self.winch_velocity*self.dt}")
+        # self.rope_load_cache.append(self.rope_length_load_side)
+        # self.prev_winch_position = copy.deepcopy(self.winch_position)
+
+        # self.state[1] = self.rope_load
+        self.state = [
+            self.position,  # boat position
+            self.velocity,  # boat velocity
+            self.orientation,  # boat orientation
+            self.angular_velocity,  # boat angular velocity
+            self.load_position,  # load position
+            self.wave_state[0][0],  # wave heave in top left corner for debugging
+            self.velocity[2],  # boat velocity
+            None,  # current buoyant forces
+        ]
+
+        obs = np.array(  # same as self.observation_space
+            [
+                self.load_position[2],  # load position
+                self.target_position,
+                self.load_velocity_z,
+                self.target_velocity,
+                self.winch_position[2],  # boat position
+                self.velocity[2]  # boat velocity
+            ],
+            dtype=np.float64,
+        )
+        
+        self.prev_load_postion = copy.deepcopy(self.load_position)
+        
+        return obs
+
+    def step(self, action, ext_pos=None):
+        if self.validation:
+            if self.step_count > self.learning_starts:
+                if self.step_count < (self.learning_starts+(self.max_step_per_episode-self.learning_starts)/2):
+                    # keep stable
+                    self.target_position = self.initial_target_position
+                    self.target_velocity = 0
+                else:
+                    # move the load down to ground
+                    self.target_velocity = (2.0 - self.initial_target_position)/((self.max_step_per_episode-self.learning_starts)*self.dt)  # calculate required velocity to go down with the load till the end of the episode
+                    self.target_position = self.target_position + self.target_velocity*self.dt
+
+        obs = self._get_obs(action) if ext_pos is None else self._get_obs_ext(action, ext_pos)
+
         reward, done = self.reward_function(
             target_position=self.target_position,
             target_velocity=self.target_velocity
         )
+
         self.step_count = self.step_count + 1
         if done is False:
             if self.step_count > self.max_step_per_episode:

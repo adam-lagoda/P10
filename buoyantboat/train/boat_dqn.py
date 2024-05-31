@@ -29,8 +29,8 @@ model = DQN(
     max_grad_norm=10,
     exploration_fraction=0.5,
     exploration_final_eps=0.01,
-    device="cpu",
-    tensorboard_log="./tb_logs/",
+    device="cuda",
+    tensorboard_log="./tb_logs_dqn/",
 )
 
 # Create an evaluation callback with the same env, called every 10000 iterations
@@ -49,7 +49,7 @@ kwargs = {}
 kwargs["callback"] = callbacks
 
 # Train for a certain number of timesteps
-model.learn(total_timesteps=10000, tb_log_name="boat_heave", **kwargs)
+model.learn(total_timesteps=2000000, tb_log_name="boat_heave_dqn", **kwargs)
 
 # Save policy weights
-model.save("boat_heave_comp_policy")
+model.save("boat_heave_comp_policy_dqn_max_1-5")
