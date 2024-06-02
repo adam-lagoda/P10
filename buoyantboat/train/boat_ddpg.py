@@ -1,6 +1,6 @@
 import os
 import sys
-from time import time
+
 import numpy as np
 from stable_baselines3 import DDPG
 from stable_baselines3.common.callbacks import EvalCallback
@@ -14,20 +14,17 @@ package_path = os.path.abspath(os.path.join(os.getcwd()))
 package_path = package_path[0].upper() + package_path[1:]
 if package_path not in sys.path:
     sys.path.append(package_path)
-from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position; noqa: E402
+from buoyantboat.env import \
+    BuoyantBoat  # pylint: disable=wrong-import-position; noqa: E402
 
 boat = BuoyantBoat(control_technique="SAC")
 env = Monitor(boat)
 
-# # Add some noise for exploration using NormalActionNoise
-# n_actions = env.action_space.shape[0]
-# action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
 
 # Initialize RL algorithm type and hyperparameters
 model = DDPG(
     MlpPolicy,
     env,
-    # action_noise=action_noise,
     learning_rate=0.3,
     buffer_size=100000,
     learning_starts=10,
@@ -36,7 +33,7 @@ model = DDPG(
     gradient_steps=-1,  # Update policy after every episode
     tensorboard_log="./tb_logs_ddpg/",
     device="cuda",
-    verbose=1
+    verbose=1,
 )
 
 # Create an evaluation callback with the same env, called every 5000 iterations
@@ -55,7 +52,12 @@ kwargs = {}
 kwargs["callback"] = callbacks
 
 # Train for a certain number of timesteps
-model.learn(total_timesteps=200000, tb_log_name="boat_heave_ddpg_new", progress_bar=True, **kwargs)
+model.learn(
+    total_timesteps=200000,
+    tb_log_name="boat_heave_ddpg_new",
+    progress_bar=True,
+    **kwargs
+)
 
 # Save policy weights
 model.save("boat_heave_comp_DDPG_new")

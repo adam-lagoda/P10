@@ -1,6 +1,6 @@
 import os
 import sys
-from time import time
+
 import numpy as np
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import EvalCallback
@@ -13,7 +13,8 @@ package_path = os.path.abspath(os.path.join(os.getcwd()))
 package_path = package_path[0].upper() + package_path[1:]
 if package_path not in sys.path:
     sys.path.append(package_path)
-from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position; noqa: E402
+from buoyantboat.env import \
+    BuoyantBoat  # pylint: disable=wrong-import-position; noqa: E402
 
 boat = BuoyantBoat(control_technique="SAC")
 env = Monitor(boat)
@@ -29,7 +30,7 @@ model = SAC(
     learning_starts=10,
     target_update_interval=5,
     tensorboard_log="./tb_logs_sac/",
-    device="cuda"
+    device="cuda",
 )
 
 # Create an evaluation callback with the same env, called every 10000 iterations
@@ -48,7 +49,12 @@ kwargs = {}
 kwargs["callback"] = callbacks
 
 # Train for a certain number of timesteps
-model.learn(total_timesteps=200000, tb_log_name="boat_heave_comp_SAC_policy_winch_model_dc_no_termination", progress_bar=True, **kwargs)
+model.learn(
+    total_timesteps=200000,
+    tb_log_name="boat_heave_comp_SAC_policy_winch_model_dc_no_termination",
+    progress_bar=True,
+    **kwargs
+)
 
 # Save policy weights
 model.save("boat_heave_comp_SAC_policy_winch_model_dc_no_termination")

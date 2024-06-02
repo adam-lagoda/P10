@@ -1,5 +1,6 @@
 import os
 import sys
+
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
@@ -11,7 +12,8 @@ package_path = package_path[0].upper() + package_path[1:]
 if package_path not in sys.path:
     sys.path.append(package_path)
 
-from buoyantboat.env import BuoyantBoat  # pylint: disable=wrong-import-position; noqa: E402
+from buoyantboat.env import \
+    BuoyantBoat  # pylint: disable=wrong-import-position; noqa: E402
 
 boat = BuoyantBoat(control_technique="SAC")
 env = Monitor(boat)
@@ -24,7 +26,7 @@ model = PPO(
     verbose=1,
     batch_size=64,
     tensorboard_log="./tb_logs_ppo/",
-    device="cuda"
+    device="cuda",
 )
 
 # Create an evaluation callback with the same env, called every 10000 iterations
@@ -44,10 +46,7 @@ kwargs["callback"] = callbacks
 
 # Train for a certain number of timesteps
 model.learn(
-    total_timesteps=200000,
-    tb_log_name="boat_heave_ppo",
-    progress_bar=True,
-    **kwargs
+    total_timesteps=200000, tb_log_name="boat_heave_ppo", progress_bar=True, **kwargs
 )
 
 # Save policy weights

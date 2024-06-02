@@ -1,5 +1,5 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.animation import FuncAnimation
 
 # Parameters
@@ -18,12 +18,12 @@ X, Y = np.meshgrid(x, y)
 
 # Wave functions
 def wave1(X, time):
-    return 1/2 * np.sin(frequency_1 * (X + time * 2 * np.pi))
+    return 1 / 2 * np.sin(frequency_1 * (X + time * 2 * np.pi))
     # return np.sin(frequency_1 * (X + time * 2 * np.pi))
 
 
 def wave2(Y, time, delay):
-    return 1/2 * np.sin(frequency_2 * (Y + (time - delay) * 2 * np.pi))
+    return 1 / 2 * np.sin(frequency_2 * (Y + (time - delay) * 2 * np.pi))
     # return np.sin(frequency_2 * (Y + (time - delay) * 2 * np.pi))
 
 
@@ -52,7 +52,12 @@ def update(frame):
 
 # Create animation
 ani = FuncAnimation(
-    fig, update, frames=time_duration * frames_per_second, blit=False, interval=100 / frames_per_second, repeat=True
+    fig,
+    update,
+    frames=time_duration * frames_per_second,
+    blit=False,
+    interval=100 / frames_per_second,
+    repeat=True,
 )
 
 # Display animation
