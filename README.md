@@ -1,5 +1,6 @@
 # Active heave compensation using Deep Reinforcement Learning
-## Master Thesis at Aalborg University Esbjerg 2023-2024
+## Master Thesis at Aalborg University
+## Esbjerg, Denmark 2023-2024
 
 ### Structure:
 ```bash
@@ -25,7 +26,7 @@
 │       ├── dqn_test.py  # Validation script for DQN
 │       ├── ppo_test.py  # Validation script for PPO
 │       ├── sac_test.py  # Validation script for SAC
-├── environment.yml
+├── environment.yml  # Micromamba environment file
 ├── misc
 │   ├── r2  # R^2 Analysis Scripts
 │   └── wavegen.py  # Animated Wave Generation script
