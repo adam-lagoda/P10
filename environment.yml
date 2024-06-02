@@ -1,4 +1,4 @@
-# run `micromamba env create -f environment.yml -y` to install\
+# run `micromamba env create -f environment.yml -y` to install
 name: drltrain
 
 channels:
@@ -13,9 +13,6 @@ dependencies:
   - tqdm
   - gymnasium
   - matplotlib
-  - pip
-  - pip:
-    - stable-baselines3==2.2.1
   # Development
   - black>=23                         # Assists with automatic formatting to conform to PEP8.
   - conda-forge::autoflake            # Removes unused imports
@@ -36,3 +33,6 @@ dependencies:
   - sphinx_rtd_theme                  # Documentation theme
   - conda-forge::sphinx-autodoc-typehints   # Type hint support
   - conda-forge::sphinxcontrib-apidoc       # Automatic documentation from docstrings
+  - pip
+  - pip:
+    - stable-baselines3==2.2.1
