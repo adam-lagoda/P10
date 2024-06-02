@@ -25,7 +25,7 @@
 │       ├── ddpg_test.py  # Validation script for DDPG
 │       ├── dqn_test.py  # Validation script for DQN
 │       ├── ppo_test.py  # Validation script for PPO
-│       ├── sac_test.py  # Validation script for SAC
+│       └── sac_test.py  # Validation script for SAC
 ├── environment.yml  # Micromamba environment file
 ├── misc
 │   ├── r2  # R^2 Analysis Scripts
