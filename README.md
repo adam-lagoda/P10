@@ -1,4 +1,5 @@
-## "Active heave compensation using Deep Reinforcement Learning" Master Thesis at Aalborg University Esbjerg 2023-2024
+# Active heave compensation using Deep Reinforcement Learning
+## Master Thesis at Aalborg University Esbjerg 2023-2024
 
 ### Structure:
 ```bash
